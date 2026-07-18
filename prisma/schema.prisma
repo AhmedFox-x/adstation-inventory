@@ -1,0 +1,109 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id         String   @id @default(cuid())
+  email      String   @unique
+  password   String
+  firstName  String
+  lastName   String
+  title      String?
+  department String?
+  position   String?
+  role       String   @default("user")
+  createdAt  DateTime @default(now())
+}
+
+model Product {
+  id        String   @id @default(cuid())
+  name      String
+  variant   String?
+  stock     Int      @default(0)
+  minStock  Int      @default(5)
+  sku       String?  @unique
+  category  String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  withdrawalItems WithdrawalItem[]
+  supplyItems     SupplyItem[]
+  logs            InventoryLog[]
+}
+
+model WithdrawalPermit {
+  id                String   @id @default(cuid())
+  permitNumber      String   @unique
+  clientName        String
+  salesName         String?
+  operationType     String?
+  notes             String?
+  status            String   @default("completed")
+  imageBase64       String?
+  imageMimeType     String?
+  orderDate         String?
+  deliveryDate      String?
+  permitNumberOrig  String?
+  createdAt         DateTime @default(now())
+
+  items WithdrawalItem[]
+}
+
+model WithdrawalItem {
+  id                String            @id @default(cuid())
+  permitId          String
+  productId         String
+  quantityRequested Int
+  quantityActual    Int
+  matchConfidence   Float?
+  product           Product           @relation(fields: [productId], references: [id])
+  permit            WithdrawalPermit  @relation(fields: [permitId], references: [id])
+}
+
+model SupplyPermit {
+  id                String   @id @default(cuid())
+  permitNumber      String   @unique
+  supplierName      String?
+  salesName         String?
+  clientName        String?
+  notes             String?
+  imageBase64       String?
+  imageMimeType     String?
+  orderDate         String?
+  deliveryDate      String?
+  permitNumberOrig  String?
+  createdAt         DateTime @default(now())
+
+  items SupplyItem[]
+}
+
+model SupplyItem {
+  id       String       @id @default(cuid())
+  permitId String
+  productId String
+  quantity Int
+  product  Product      @relation(fields: [productId], references: [id])
+  permit   SupplyPermit @relation(fields: [permitId], references: [id])
+}
+
+model InventoryLog {
+  id            String   @id @default(cuid())
+  type          String
+  productId     String
+  oldStock      Int
+  newStock      Int
+  change        Int
+  clientName    String?
+  salesName     String?
+  notes         String?
+  referenceType String?
+  referenceId   String?
+  createdAt     DateTime @default(now())
+
+  product Product @relation(fields: [productId], references: [id])
+}
