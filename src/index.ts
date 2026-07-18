@@ -8,13 +8,48 @@ import productsRouter from "./routes/products";
 import permitsRouter from "./routes/permits";
 import logRouter from "./routes/log";
 import scanRouter from "./routes/scan";
+import usersRouter from "./routes/users";
+import rolesRouter from "./routes/roles";
 
 import { errorHandler } from "./middleware/errorHandler";
 import { initKeyManager } from "./utils/keyManager";
+import { DEFAULT_ROLES } from "./utils/permissions";
+import { prisma } from "./config/database";
 
 // ─── Init Key Manager ────────────────────────────────────────────────────────
 const apiKeys = process.env.GEMINI_API_KEYS || process.env.GEMINI_API_KEY || "";
 initKeyManager(apiKeys);
+
+// ─── Auto-seed default roles ─────────────────────────────────────────────────
+async function seedRoles() {
+  try {
+    for (const [name, config] of Object.entries(DEFAULT_ROLES)) {
+      const exists = await prisma.roleConfig.findUnique({ where: { name } });
+      if (!exists) {
+        await prisma.roleConfig.create({
+          data: {
+            name,
+            displayName: config.displayName,
+            description: config.description,
+            permissions: JSON.stringify(config.permissions),
+          },
+        });
+        console.log(`  ✅ Created role: ${name}`);
+      }
+    }
+    // Assign owner role to first user if they have no roleId
+    const firstUser = await prisma.user.findFirst({ where: { roleId: null } });
+    if (firstUser) {
+      const ownerRole = await prisma.roleConfig.findUnique({ where: { name: "owner" } });
+      if (ownerRole) {
+        await prisma.user.update({ where: { id: firstUser.id }, data: { roleId: ownerRole.id, role: "owner" } });
+        console.log(`  👑 Assigned owner role to ${firstUser.email}`);
+      }
+    }
+  } catch (e: any) {
+    console.log(`  ⚠️  Role seeding skipped: ${e?.message}`);
+  }
+}
 
 const app = express();
 
@@ -24,7 +59,6 @@ app.use(
     origin: [
       process.env.FRONTEND_URL || "http://localhost:5174",
       "http://localhost:5174",
-      "http://localhost:4001",
       "https://localhost:4443",
       `https://localhost:${Number(process.env.HTTPS_PORT) || 4443}`,
     ],
@@ -47,6 +81,8 @@ app.use("/api/inventory", productsRouter);
 app.use("/api/inventory", permitsRouter);
 app.use("/api/inventory", logRouter);
 app.use("/api/inventory", scanRouter);
+app.use("/api/inventory", usersRouter);
+app.use("/api/inventory", rolesRouter);
 
 // ─── Key Manager Status ──────────────────────────────────────────────────────
 import { getStatus, getKeyCount } from "./utils/keyManager";
@@ -89,14 +125,15 @@ const certPemPath = path.join(certDir, "cert.pem");
 const keyPemPath = path.join(certDir, "key.pem");
 
 function startServer() {
-  // HTTP only — Railway handles HTTPS termination
-  app.listen(PORT, "0.0.0.0", () => {
-    console.log(`\n📦  AD Station Inventory API running on http://0.0.0.0:${PORT}`);
-    console.log(`   Environment: ${process.env.NODE_ENV || "development"}\n`);
-  });
+  // Seed roles before starting
+  seedRoles().then(() => {
+    // HTTP always runs
+    app.listen(PORT, () => {
+      console.log(`\n📦  AD Station Inventory API running on http://localhost:${PORT}`);
+      console.log(`   Environment: ${process.env.NODE_ENV || "development"}\n`);
+    });
 
-  // HTTPS — only for local dev (skip on Railway)
-  if (process.env.NODE_ENV !== "production") {
+    // HTTPS — try PFX first, then PEM
     if (fs.existsSync(pfxPath)) {
       const pfx = fs.readFileSync(pfxPath);
       https.createServer({ pfx, passphrase: process.env.CERT_PASSPHRASE || "adstation123" }, app).listen(HTTPS_PORT, () => {
@@ -110,9 +147,12 @@ function startServer() {
         console.log(`🔒  HTTPS running on https://localhost:${HTTPS_PORT}`);
       });
     } else {
-      console.log(`⚠️  No SSL cert found — HTTPS disabled.`);
+      console.log(`⚠️  No SSL cert found — HTTPS disabled. Run generate-cert.cjs or place cert.pem + key.pem in certs/`);
     }
-  }
+  }).catch((e) => {
+    console.error("Failed to seed roles:", e);
+    process.exit(1);
+  });
 }
 
 startServer();
