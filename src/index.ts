@@ -10,6 +10,7 @@ import logRouter from "./routes/log";
 import scanRouter from "./routes/scan";
 import usersRouter from "./routes/users";
 import rolesRouter from "./routes/roles";
+import stocktakeRouter from "./routes/stocktake";
 
 import { errorHandler } from "./middleware/errorHandler";
 import { initKeyManager } from "./utils/keyManager";
@@ -83,6 +84,7 @@ app.use("/api/inventory", logRouter);
 app.use("/api/inventory", scanRouter);
 app.use("/api/inventory", usersRouter);
 app.use("/api/inventory", rolesRouter);
+app.use("/api/inventory", stocktakeRouter);
 
 // ─── Key Manager Status ──────────────────────────────────────────────────────
 import { getStatus, getKeyCount } from "./utils/keyManager";

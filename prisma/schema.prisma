@@ -124,3 +124,32 @@ model InventoryLog {
 
   product Product @relation(fields: [productId], references: [id])
 }
+
+model StocktakeSession {
+  id          String   @id @default(cuid())
+  name        String
+  status      String   @default("in_progress")
+  userId      String
+  userName    String?
+  date        DateTime @default(now())
+  notes       String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  items StocktakeItem[]
+}
+
+model StocktakeItem {
+  id            String  @id @default(cuid())
+  sessionId     String
+  productId     String
+  productName   String
+  productSku    String?
+  productVariant String?
+  category      String?
+  systemStock   Int
+  actualCount   Int?
+  note          String?
+
+  session StocktakeSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+}
