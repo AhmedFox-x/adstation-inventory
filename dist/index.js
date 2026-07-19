@@ -14,6 +14,7 @@ const log_1 = __importDefault(require("./routes/log"));
 const scan_1 = __importDefault(require("./routes/scan"));
 const users_1 = __importDefault(require("./routes/users"));
 const roles_1 = __importDefault(require("./routes/roles"));
+const stocktake_1 = __importDefault(require("./routes/stocktake"));
 const errorHandler_1 = require("./middleware/errorHandler");
 const keyManager_1 = require("./utils/keyManager");
 const permissions_1 = require("./utils/permissions");
@@ -38,6 +39,7 @@ async function seedRoles() {
                 console.log(`  ✅ Created role: ${name}`);
             }
         }
+        // Assign owner role to first user if they have no roleId
         const firstUser = await database_1.prisma.user.findFirst({ where: { roleId: null } });
         if (firstUser) {
             const ownerRole = await database_1.prisma.roleConfig.findUnique({ where: { name: "owner" } });
@@ -77,6 +79,7 @@ app.use("/api/inventory", log_1.default);
 app.use("/api/inventory", scan_1.default);
 app.use("/api/inventory", users_1.default);
 app.use("/api/inventory", roles_1.default);
+app.use("/api/inventory", stocktake_1.default);
 // ─── Key Manager Status ──────────────────────────────────────────────────────
 const keyManager_2 = require("./utils/keyManager");
 const auth_2 = require("./middleware/auth");
@@ -111,6 +114,7 @@ const certDir = path_1.default.resolve(__dirname, "../certs");
 const certPemPath = path_1.default.join(certDir, "cert.pem");
 const keyPemPath = path_1.default.join(certDir, "key.pem");
 function startServer() {
+    // Seed roles before starting
     seedRoles().then(() => {
         // HTTP always runs
         app.listen(PORT, () => {
@@ -135,6 +139,9 @@ function startServer() {
         else {
             console.log(`⚠️  No SSL cert found — HTTPS disabled. Run generate-cert.cjs or place cert.pem + key.pem in certs/`);
         }
+    }).catch((e) => {
+        console.error("Failed to seed roles:", e);
+        process.exit(1);
     });
 }
 startServer();
