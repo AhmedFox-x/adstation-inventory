@@ -31,7 +31,6 @@ router.get("/stocktake/sessions", auth_1.requireAuth, async (req, res, next) => 
                 date: s.date,
                 notes: s.notes,
                 itemCount: s._count.items,
-                countedItems: 0,
                 createdAt: s.createdAt,
                 updatedAt: s.updatedAt,
             })),
@@ -85,6 +84,8 @@ router.post("/stocktake/sessions", auth_1.requireAuth, async (req, res, next) =>
                         systemStock: it.systemStock,
                         actualCount: it.actualCount ?? null,
                         note: it.note || null,
+                        exclusionReason: it.exclusionReason || null,
+                        flaggedRecount: it.flaggedRecount || false,
                     })),
                 } : undefined,
             },
@@ -103,6 +104,10 @@ router.patch("/stocktake/sessions/:id", auth_1.requireAuth, async (req, res, nex
         const existing = await database_1.prisma.stocktakeSession.findUnique({ where: { id: req.params.id } });
         if (!existing) {
             res.status(404).json({ error: "Session not found" });
+            return;
+        }
+        if (existing.status === "completed") {
+            res.status(400).json({ error: "Session already approved" });
             return;
         }
         const updateData = {};
@@ -125,6 +130,8 @@ router.patch("/stocktake/sessions/:id", auth_1.requireAuth, async (req, res, nex
                     systemStock: it.systemStock,
                     actualCount: it.actualCount ?? null,
                     note: it.note || null,
+                    exclusionReason: it.exclusionReason || null,
+                    flaggedRecount: it.flaggedRecount || false,
                 })),
             });
         }
@@ -134,6 +141,82 @@ router.patch("/stocktake/sessions/:id", auth_1.requireAuth, async (req, res, nex
             include: { items: true },
         });
         res.json({ session });
+    }
+    catch (e) {
+        next(e);
+    }
+});
+// ── POST /api/inventory/stocktake/sessions/:id/approve ──────────────────────
+router.post("/stocktake/sessions/:id/approve", auth_1.requireAuth, async (req, res, next) => {
+    try {
+        const session = await database_1.prisma.stocktakeSession.findUnique({
+            where: { id: req.params.id },
+            include: { items: true },
+        });
+        if (!session) {
+            res.status(404).json({ error: "Session not found" });
+            return;
+        }
+        if (session.status === "completed") {
+            res.status(400).json({ error: "Session already approved" });
+            return;
+        }
+        const countable = session.items.filter(it => it.actualCount !== null && !it.exclusionReason);
+        if (countable.length === 0) {
+            res.status(400).json({ error: "No counted items to approve" });
+            return;
+        }
+        let updated = 0;
+        let totalIncrease = 0;
+        let totalDecrease = 0;
+        const logs = [];
+        for (const item of countable) {
+            const product = await database_1.prisma.product.findUnique({ where: { id: item.productId } });
+            if (!product)
+                continue;
+            const oldStock = product.stock;
+            const newStock = item.actualCount;
+            const change = newStock - oldStock;
+            if (change === 0)
+                continue;
+            await database_1.prisma.product.update({
+                where: { id: item.productId },
+                data: { stock: newStock },
+            });
+            const log = await database_1.prisma.inventoryLog.create({
+                data: {
+                    type: "stocktake",
+                    productId: item.productId,
+                    oldStock,
+                    newStock,
+                    change,
+                    notes: item.note || null,
+                    referenceType: "stocktake",
+                    referenceId: session.id,
+                },
+            });
+            logs.push(log);
+            updated++;
+            if (change > 0)
+                totalIncrease += change;
+            if (change < 0)
+                totalDecrease += Math.abs(change);
+        }
+        await database_1.prisma.stocktakeSession.update({
+            where: { id: req.params.id },
+            data: { status: "completed" },
+        });
+        res.json({
+            summary: {
+                sessionId: session.id,
+                sessionName: session.name,
+                totalProducts: countable.length,
+                updatedProducts: updated,
+                totalIncrease,
+                totalDecrease,
+                logsCreated: logs.length,
+            },
+        });
     }
     catch (e) {
         next(e);

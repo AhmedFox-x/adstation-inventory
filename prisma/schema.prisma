@@ -45,6 +45,7 @@ model Product {
   minStock  Int      @default(5)
   sku       String?  @unique
   category  String?
+  price     Float?   @default(0)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -150,6 +151,8 @@ model StocktakeItem {
   systemStock   Int
   actualCount   Int?
   note          String?
+  exclusionReason String?
+  flaggedRecount Boolean @default(false)
 
   session StocktakeSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
 }
