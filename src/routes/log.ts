@@ -281,8 +281,8 @@ router.get("/report", requireAuth, async (req, res, next) => {
       if (!byProductMap[log.productId]) {
         byProductMap[log.productId] = {
           name: log.product.name,
-          before: log.oldStock,
-          after: log.newStock,
+          before: 0,
+          after: 0,
           delta: 0,
           moves: 0,
           supplyTotal: 0,
@@ -291,11 +291,15 @@ router.get("/report", requireAuth, async (req, res, next) => {
         };
       }
       const p = byProductMap[log.productId];
-      p.after = log.newStock;
       p.delta += log.change;
       p.moves += 1;
       if (log.type === "supply") p.supplyTotal += Math.abs(log.change);
       else if (log.type === "withdraw") p.withdrawTotal += Math.abs(log.change);
+    }
+
+    for (const [productId, p] of Object.entries(byProductMap)) {
+      p.after = p.currentStock;
+      p.before = p.currentStock - p.supplyTotal + p.withdrawTotal;
     }
 
     res.json({
