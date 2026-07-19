@@ -84,7 +84,9 @@ app.get("/api/inventory/keys/status", auth_2.requireAuth, (_req, res) => {
     res.json({ keys: (0, keyManager_2.getStatus)(), totalKeys: (0, keyManager_2.getKeyCount)() });
 });
 // ─── Static files (Production) ───────────────────────────────────────────────
-const distPath = path_1.default.resolve(__dirname, "../../inventory-frontend/dist");
+const distPath = process.env.NODE_ENV === "production"
+    ? path_1.default.resolve(__dirname, "../public")
+    : path_1.default.resolve(__dirname, "../../inventory-frontend/dist");
 app.use(express_1.default.static(distPath));
 // SPA fallback — non-API routes return index.html
 app.get("*", (req, res) => {
