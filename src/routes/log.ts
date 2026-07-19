@@ -239,32 +239,38 @@ router.get("/log/:id", requireAuth, async (req, res, next) => {
 // ── GET /api/inventory/report ─────────────────────────────────────────────────
 router.get("/report", requireAuth, async (req, res, next) => {
   try {
-    const dateParam = req.query.date as string;
-    const targetDate = dateParam || new Date().toISOString().slice(0, 10);
+    const { date, from, to } = req.query as Record<string, string>;
 
-    const dayStart = new Date(targetDate);
-    dayStart.setHours(0, 0, 0, 0);
-    const dayEnd = new Date(targetDate);
-    dayEnd.setHours(23, 59, 59, 999);
+    let dayStart: Date, dayEnd: Date;
+    if (from && to) {
+      dayStart = new Date(from);
+      dayStart.setHours(0, 0, 0, 0);
+      dayEnd = new Date(to);
+      dayEnd.setHours(23, 59, 59, 999);
+    } else {
+      const targetDate = date || new Date().toISOString().slice(0, 10);
+      dayStart = new Date(targetDate);
+      dayStart.setHours(0, 0, 0, 0);
+      dayEnd = new Date(targetDate);
+      dayEnd.setHours(23, 59, 59, 999);
+    }
 
     const logs = await prisma.inventoryLog.findMany({
       where: {
         createdAt: { gte: dayStart, lte: dayEnd },
       },
-      include: { product: { select: { name: true } } },
-      orderBy: { createdAt: "desc" },
+      include: { product: { select: { name: true, stock: true } } },
+      orderBy: { createdAt: "asc" },
     });
 
-    // Summary
     let totalUp = 0;
     let totalDown = 0;
     const clientsSet = new Set<string>();
 
-    // By product
-    const byProductMap: Record<
-      string,
-      { name: string; before: number; after: number; delta: number; moves: number }
-    > = {};
+    const byProductMap: Record<string, {
+      name: string; before: number; after: number; delta: number;
+      moves: number; supplyTotal: number; withdrawTotal: number; currentStock: number;
+    }> = {};
 
     for (const log of logs) {
       if (log.change > 0) totalUp += log.change;
@@ -279,15 +285,23 @@ router.get("/report", requireAuth, async (req, res, next) => {
           after: log.newStock,
           delta: 0,
           moves: 0,
+          supplyTotal: 0,
+          withdrawTotal: 0,
+          currentStock: log.product.stock,
         };
       }
-      byProductMap[log.productId].after = log.newStock;
-      byProductMap[log.productId].delta += log.change;
-      byProductMap[log.productId].moves += 1;
+      const p = byProductMap[log.productId];
+      p.after = log.newStock;
+      p.delta += log.change;
+      p.moves += 1;
+      if (log.type === "supply") p.supplyTotal += Math.abs(log.change);
+      else if (log.type === "withdraw") p.withdrawTotal += Math.abs(log.change);
     }
 
     res.json({
-      date: targetDate,
+      date: from && to ? `${from} — ${to}` : date || new Date().toISOString().slice(0, 10),
+      from: from || null,
+      to: to || null,
       summary: {
         totalUp,
         totalDown,
@@ -310,6 +324,8 @@ router.get("/report", requireAuth, async (req, res, next) => {
         clientName: l.clientName,
         salesName: l.salesName,
         notes: l.notes,
+        referenceType: l.referenceType,
+        referenceId: l.referenceId,
         createdAt: l.createdAt,
       })),
     });
