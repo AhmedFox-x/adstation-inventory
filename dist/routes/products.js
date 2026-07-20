@@ -112,7 +112,7 @@ router.get("/products", auth_1.requireAuth, async (req, res, next) => {
 // ── POST /api/inventory/products ──────────────────────────────────────────────
 router.post("/products", auth_1.requireAuth, async (req, res, next) => {
     try {
-        const { name, variant, stock, minStock, sku, category, price } = req.body;
+        const { name, variant, stock, minStock, sku, category, price, image } = req.body;
         if (!name || !String(name).trim()) {
             res.status(400).json({ error: "Product name is required" });
             return;
@@ -125,7 +125,8 @@ router.post("/products", auth_1.requireAuth, async (req, res, next) => {
                 minStock: Number(minStock) || 5,
                 sku: sku || null,
                 category: category || null,
-                price: price != null ? Number(price) : 0,
+                price: price !== undefined ? Number(price) || 0 : 0,
+                image: image || null,
             },
         });
         res.status(201).json({ product });
@@ -141,7 +142,7 @@ router.post("/products", auth_1.requireAuth, async (req, res, next) => {
 // ── PATCH /api/inventory/products/:id ─────────────────────────────────────────
 router.patch("/products/:id", auth_1.requireAuth, async (req, res, next) => {
     try {
-        const { name, variant, stock, minStock, sku, category, price } = req.body;
+        const { name, variant, stock, minStock, sku, category, price, image } = req.body;
         const existing = await database_1.prisma.product.findUnique({ where: { id: req.params.id } });
         if (!existing) {
             res.status(404).json({ error: "Product not found" });
@@ -157,6 +158,7 @@ router.patch("/products/:id", auth_1.requireAuth, async (req, res, next) => {
                 ...(sku !== undefined && { sku: sku || null }),
                 ...(category !== undefined && { category: category || null }),
                 ...(price !== undefined && { price: Number(price) || 0 }),
+                ...(image !== undefined && { image: image || null }),
             },
         });
         res.json({ product });

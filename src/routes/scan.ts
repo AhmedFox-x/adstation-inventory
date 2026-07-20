@@ -250,9 +250,10 @@ router.post("/scan/confirm", requireAuth, async (req: AuthRequest, res) => {
 
           // If no productId, create the product first
           if (!item.productId || item.productId === "") {
+            const productName = item.editedName?.trim() || item.rawName || item.name || "New Product";
             product = await tx.product.create({
               data: {
-                name: item.rawName || item.name || "New Product",
+                name: productName,
                 stock: 0,
                 minStock: 10,
               },

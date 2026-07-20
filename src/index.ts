@@ -10,7 +10,6 @@ import logRouter from "./routes/log";
 import scanRouter from "./routes/scan";
 import usersRouter from "./routes/users";
 import rolesRouter from "./routes/roles";
-import stocktakeRouter from "./routes/stocktake";
 
 import { errorHandler } from "./middleware/errorHandler";
 import { initKeyManager } from "./utils/keyManager";
@@ -38,7 +37,6 @@ async function seedRoles() {
         console.log(`  ✅ Created role: ${name}`);
       }
     }
-    // Assign owner role to first user if they have no roleId
     const firstUser = await prisma.user.findFirst({ where: { roleId: null } });
     if (firstUser) {
       const ownerRole = await prisma.roleConfig.findUnique({ where: { name: "owner" } });
@@ -68,7 +66,7 @@ app.use(
 );
 
 // ─── Body parsing ─────────────────────────────────────────────────────────────
-app.use(express.json({ limit: "10mb" }));
+app.use(express.json({ limit: "20mb" }));
 app.use(express.urlencoded({ extended: true }));
 
 // ─── Health check ─────────────────────────────────────────────────────────────
@@ -84,7 +82,6 @@ app.use("/api/inventory", logRouter);
 app.use("/api/inventory", scanRouter);
 app.use("/api/inventory", usersRouter);
 app.use("/api/inventory", rolesRouter);
-app.use("/api/inventory", stocktakeRouter);
 
 // ─── Key Manager Status ──────────────────────────────────────────────────────
 import { getStatus, getKeyCount } from "./utils/keyManager";
@@ -127,7 +124,6 @@ const certPemPath = path.join(certDir, "cert.pem");
 const keyPemPath = path.join(certDir, "key.pem");
 
 function startServer() {
-  // Seed roles before starting
   seedRoles().then(() => {
     // HTTP always runs
     app.listen(PORT, () => {
@@ -151,9 +147,6 @@ function startServer() {
     } else {
       console.log(`⚠️  No SSL cert found — HTTPS disabled. Run generate-cert.cjs or place cert.pem + key.pem in certs/`);
     }
-  }).catch((e) => {
-    console.error("Failed to seed roles:", e);
-    process.exit(1);
   });
 }
 
