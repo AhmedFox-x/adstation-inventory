@@ -97,6 +97,10 @@ const distPath = process.env.NODE_ENV === "production"
   : path.resolve(__dirname, "../../inventory-frontend/dist");
 app.use(express.static(distPath));
 
+// ─── Product images ──────────────────────────────────────────────────────────
+const uploadsPath = path.resolve(__dirname, "../public/uploads");
+app.use("/uploads", express.static(uploadsPath));
+
 // SPA fallback — non-API routes return index.html
 app.get("*", (req, res) => {
   if (!req.path.startsWith("/api/")) {

@@ -1,9 +1,89 @@
 "use strict";
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
 Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = require("express");
+const multer_1 = __importDefault(require("multer"));
+const path_1 = __importDefault(require("path"));
+const fs_1 = __importDefault(require("fs"));
 const database_1 = require("../config/database");
 const auth_1 = require("../middleware/auth");
 const router = (0, express_1.Router)();
+// ── Multer config for product image uploads ──────────────────────────────────
+const uploadsDir = path_1.default.resolve(__dirname, "../../public/uploads/products");
+if (!fs_1.default.existsSync(uploadsDir)) {
+    fs_1.default.mkdirSync(uploadsDir, { recursive: true });
+}
+const storage = multer_1.default.diskStorage({
+    destination: (_req, _file, cb) => cb(null, uploadsDir),
+    filename: (_req, file, cb) => {
+        const unique = `${Date.now()}-${Math.round(Math.random() * 1e6)}`;
+        const ext = path_1.default.extname(file.originalname).toLowerCase();
+        cb(null, `${unique}${ext}`);
+    },
+});
+const upload = (0, multer_1.default)({
+    storage,
+    limits: { fileSize: 5 * 1024 * 1024 },
+    fileFilter: (_req, file, cb) => {
+        const allowed = [".jpg", ".jpeg", ".png", ".webp", ".gif"];
+        const ext = path_1.default.extname(file.originalname).toLowerCase();
+        cb(null, allowed.includes(ext));
+    },
+});
+// ── POST /api/inventory/products/:id/image — upload image file ──────────────
+router.post("/products/:id/image", auth_1.requireAuth, upload.single("image"), async (req, res, next) => {
+    try {
+        const existing = await database_1.prisma.product.findUnique({ where: { id: req.params.id } });
+        if (!existing) {
+            res.status(404).json({ error: "Product not found" });
+            return;
+        }
+        if (!req.file) {
+            res.status(400).json({ error: "No image file provided" });
+            return;
+        }
+        // Delete old image file if it exists
+        if (existing.imageUrl) {
+            const oldPath = path_1.default.join(uploadsDir, path_1.default.basename(existing.imageUrl));
+            if (fs_1.default.existsSync(oldPath))
+                fs_1.default.unlinkSync(oldPath);
+        }
+        const imageUrl = `/uploads/products/${req.file.filename}`;
+        const product = await database_1.prisma.product.update({
+            where: { id: req.params.id },
+            data: { imageUrl },
+        });
+        res.json({ product });
+    }
+    catch (err) {
+        next(err);
+    }
+});
+// ── DELETE /api/inventory/products/:id/image — remove image ─────────────────
+router.delete("/products/:id/image", auth_1.requireAuth, async (req, res, next) => {
+    try {
+        const existing = await database_1.prisma.product.findUnique({ where: { id: req.params.id } });
+        if (!existing) {
+            res.status(404).json({ error: "Product not found" });
+            return;
+        }
+        if (existing.imageUrl) {
+            const filePath = path_1.default.join(uploadsDir, path_1.default.basename(existing.imageUrl));
+            if (fs_1.default.existsSync(filePath))
+                fs_1.default.unlinkSync(filePath);
+        }
+        const product = await database_1.prisma.product.update({
+            where: { id: req.params.id },
+            data: { imageUrl: null },
+        });
+        res.json({ product });
+    }
+    catch (err) {
+        next(err);
+    }
+});
 // ── GET /api/inventory/stats ──────────────────────────────────────────────────
 router.get("/stats", auth_1.requireAuth, async (_req, res, next) => {
     try {
@@ -27,7 +107,6 @@ router.get("/stats", auth_1.requireAuth, async (_req, res, next) => {
             orderBy: { createdAt: "desc" },
             include: { product: { select: { name: true } } },
         });
-        // Resolve permit numbers for recent logs
         const recentLogsWithPermit = await Promise.all(recentLogs.map(async (l) => {
             let permitNumber = null;
             if (l.referenceType === "withdrawal" && l.referenceId) {
@@ -45,29 +124,15 @@ router.get("/stats", auth_1.requireAuth, async (_req, res, next) => {
                 permitNumber = s?.permitNumberOrig || s?.permitNumber || null;
             }
             return {
-                id: l.id,
-                type: l.type,
-                permitNumber,
-                productId: l.productId,
-                productName: l.product.name,
-                oldStock: l.oldStock,
-                newStock: l.newStock,
-                change: l.change,
-                clientName: l.clientName,
-                salesName: l.salesName,
-                notes: l.notes === "via scan" ? null : l.notes,
-                createdAt: l.createdAt,
+                id: l.id, type: l.type, permitNumber, productId: l.productId,
+                productName: l.product.name, oldStock: l.oldStock, newStock: l.newStock,
+                change: l.change, clientName: l.clientName, salesName: l.salesName,
+                notes: l.notes === "via scan" ? null : l.notes, createdAt: l.createdAt,
             };
         }));
         res.json({
-            totalItems,
-            totalProducts,
-            lowStock,
-            outOfStock,
-            todayMoves,
-            todayUp,
-            todayDown,
-            recentLogs: recentLogsWithPermit,
+            totalItems, totalProducts, lowStock, outOfStock,
+            todayMoves, todayUp, todayDown, recentLogs: recentLogsWithPermit,
         });
     }
     catch (err) {
@@ -98,9 +163,7 @@ router.get("/products", auth_1.requireAuth, async (req, res, next) => {
         res.json({
             products,
             pagination: {
-                page: Number(page),
-                limit: take,
-                total,
+                page: Number(page), limit: take, total,
                 pages: Math.ceil(total / take),
             },
         });
@@ -112,7 +175,7 @@ router.get("/products", auth_1.requireAuth, async (req, res, next) => {
 // ── POST /api/inventory/products ──────────────────────────────────────────────
 router.post("/products", auth_1.requireAuth, async (req, res, next) => {
     try {
-        const { name, variant, stock, minStock, sku, category, price, image } = req.body;
+        const { name, variant, stock, minStock, sku, category, price, imageUrl } = req.body;
         if (!name || !String(name).trim()) {
             res.status(400).json({ error: "Product name is required" });
             return;
@@ -126,7 +189,7 @@ router.post("/products", auth_1.requireAuth, async (req, res, next) => {
                 sku: sku || null,
                 category: category || null,
                 price: price !== undefined ? Number(price) || 0 : 0,
-                image: image || null,
+                imageUrl: imageUrl || null,
             },
         });
         res.status(201).json({ product });
@@ -142,7 +205,7 @@ router.post("/products", auth_1.requireAuth, async (req, res, next) => {
 // ── PATCH /api/inventory/products/:id ─────────────────────────────────────────
 router.patch("/products/:id", auth_1.requireAuth, async (req, res, next) => {
     try {
-        const { name, variant, stock, minStock, sku, category, price, image } = req.body;
+        const { name, variant, stock, minStock, sku, category, price, imageUrl } = req.body;
         const existing = await database_1.prisma.product.findUnique({ where: { id: req.params.id } });
         if (!existing) {
             res.status(404).json({ error: "Product not found" });
@@ -158,7 +221,7 @@ router.patch("/products/:id", auth_1.requireAuth, async (req, res, next) => {
                 ...(sku !== undefined && { sku: sku || null }),
                 ...(category !== undefined && { category: category || null }),
                 ...(price !== undefined && { price: Number(price) || 0 }),
-                ...(image !== undefined && { image: image || null }),
+                ...(imageUrl !== undefined && { imageUrl: imageUrl || null }),
             },
         });
         res.json({ product });
@@ -179,7 +242,12 @@ router.delete("/products/:id", auth_1.requireAuth, async (req, res, next) => {
             res.status(404).json({ error: "Product not found" });
             return;
         }
-        // Delete related records first (SQLite doesn't enforce foreign keys by default)
+        // Delete image file if exists
+        if (existing.imageUrl) {
+            const filePath = path_1.default.join(uploadsDir, path_1.default.basename(existing.imageUrl));
+            if (fs_1.default.existsSync(filePath))
+                fs_1.default.unlinkSync(filePath);
+        }
         await database_1.prisma.inventoryLog.deleteMany({ where: { productId: req.params.id } });
         await database_1.prisma.withdrawalItem.deleteMany({ where: { productId: req.params.id } });
         await database_1.prisma.supplyItem.deleteMany({ where: { productId: req.params.id } });
