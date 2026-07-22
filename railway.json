@@ -2,7 +2,7 @@
   "$schema": "https://railway.app/railway.schema.json",
   "build": {
     "builder": "NIXPACKS",
-    "buildCommand": "rm -rf node_modules && npm install && npx prisma generate && npx tsc"
+    "buildCommand": "rm -rf node_modules node_modules/.prisma && npm cache clean --force && npm install && npx prisma generate --schema=prisma/schema.prisma && npx tsc"
   },
   "deploy": {
     "startCommand": "npx prisma generate && npx prisma db push --skip-generate --accept-data-loss && node dist/seed-import.js && node dist/index.js",
