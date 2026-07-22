@@ -4,3 +4,4 @@ node_modules/
 *.pfx
 *.pem
 dist/
+public/uploads/products/
