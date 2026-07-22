@@ -9,7 +9,7 @@ interface ImportProduct {
   image: string;
 }
 
-const DATA_DIR = process.env.IMPORT_DIR || path.resolve(__dirname, "../../import-data");
+const DATA_DIR = process.env.IMPORT_DIR || path.resolve(__dirname, "../import-data");
 const PRODUCTS_JSON = path.join(DATA_DIR, "products.json");
 const IMAGES_DIR = path.join(DATA_DIR, "images");
 const UPLOADS_DIR = path.resolve(__dirname, "../public/uploads/products");
