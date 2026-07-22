@@ -1,9 +1,9 @@
-node_modules/
+﻿node_modules/
 .env
 *.db
 *.pfx
 *.pem
 dist/
-public/uploads/products/
-
-
+public/uploads/
+import-data/images/
+.playwright-mcp/
