@@ -45,15 +45,27 @@ async function main() {
   const existing = await prisma.product.count();
   if (existing > 0) {
     console.log(`ℹ️  Database already has ${existing} products — skipping data import.`);
-    // Fix imageUrls if images are in /images/ subdirectory on volume
-    const volImagesDir = path.join(UPLOADS_DIR, "images");
-    if (fs.existsSync(volImagesDir)) {
-      const result = await prisma.$executeRaw`
-        UPDATE "Product" SET "imageUrl" = REPLACE("imageUrl", '/uploads/products/', '/uploads/products/images/')
-        WHERE "imageUrl" LIKE '/uploads/products/%' AND "imageUrl" NOT LIKE '%/images/%'
-      `;
-      if (result > 0) console.log(`✏️  Fixed ${result} product imageUrls to match volume layout`);
+
+    // Build name -> imageUrl map from products.json
+    const nameToImage = new Map<string, string>();
+    for (const p of products) {
+      const name = (p.name || "").trim();
+      if (name && p.image && !nameToImage.has(name)) {
+        nameToImage.set(name, `/uploads/products/images/${p.image}`);
+      }
     }
+
+    // Fix imageUrls: update each product whose imageUrl doesn't match JSON
+    let fixed = 0;
+    for (const [name, correctUrl] of nameToImage) {
+      const result = await prisma.$executeRaw`
+        UPDATE "Product" SET "imageUrl" = ${correctUrl}
+        WHERE "name" = ${name} AND ("imageUrl" IS NULL OR "imageUrl" != ${correctUrl})
+      `;
+      if (result > 0) fixed += Number(result);
+    }
+    if (fixed > 0) console.log(`✏️  Fixed ${fixed} product imageUrls to match import data`);
+    else console.log(`✅ All imageUrls already correct`);
     return;
   }
 
