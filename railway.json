@@ -2,10 +2,10 @@
   "$schema": "https://railway.app/railway.schema.json",
   "build": {
     "builder": "NIXPACKS",
-    "buildCommand": "rm -rf node_modules/.prisma node_modules/@prisma && npm install && npx prisma generate && node -e \"console.log(require('@prisma/client').PrismaClient.toString().includes('imageUrl') ? 'OK' : 'STALE')\""
+    "buildCommand": "rm -rf node_modules/.prisma node_modules/@prisma && npm install && npx prisma generate && npx tsc"
   },
   "deploy": {
-    "startCommand": "npx prisma db push --skip-generate && node dist/seed.js && node dist/index.js",
+    "startCommand": "npx prisma db push --skip-generate && node dist/seed-import.js && node dist/index.js",
     "healthcheckPath": "/health",
     "restartPolicyType": "ON_FAILURE",
     "restartPolicyMaxRetries": 10

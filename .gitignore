@@ -3,5 +3,4 @@ node_modules/
 *.db
 *.pfx
 *.pem
-public/uploads/products/*
-!public/uploads/products/.gitkeep
+dist/
