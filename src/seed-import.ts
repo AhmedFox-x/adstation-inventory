@@ -45,6 +45,15 @@ async function main() {
   const existing = await prisma.product.count();
   if (existing > 0) {
     console.log(`ℹ️  Database already has ${existing} products — skipping data import.`);
+    // Fix imageUrls if images are in /images/ subdirectory on volume
+    const volImagesDir = path.join(UPLOADS_DIR, "images");
+    if (fs.existsSync(volImagesDir)) {
+      const result = await prisma.$executeRaw`
+        UPDATE "Product" SET "imageUrl" = REPLACE("imageUrl", '/uploads/products/', '/uploads/products/images/')
+        WHERE "imageUrl" LIKE '/uploads/products/%' AND "imageUrl" NOT LIKE '%/images/%'
+      `;
+      if (result > 0) console.log(`✏️  Fixed ${result} product imageUrls to match volume layout`);
+    }
     return;
   }
 
