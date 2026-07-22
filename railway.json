@@ -5,7 +5,7 @@
     "buildCommand": "rm -rf node_modules/.prisma node_modules/@prisma && npm install && npx prisma generate && node -e \"console.log(require('@prisma/client').PrismaClient.toString().includes('imageUrl') ? 'OK' : 'STALE')\""
   },
   "deploy": {
-    "startCommand": "npx prisma db push --skip-generate && node dist/index.js",
+    "startCommand": "npx prisma db push --skip-generate && node dist/seed.js && node dist/index.js",
     "healthcheckPath": "/health",
     "restartPolicyType": "ON_FAILURE",
     "restartPolicyMaxRetries": 10

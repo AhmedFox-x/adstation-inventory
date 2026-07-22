@@ -18,6 +18,12 @@ const products = [
 ];
 
 async function main() {
+  const existing = await prisma.product.count();
+  if (existing > 0) {
+    console.log(`ℹ️  Database already has ${existing} products — skipping seed.`);
+    return;
+  }
+
   console.log("Seeding inventory products...");
 
   for (const p of products) {
