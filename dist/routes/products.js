@@ -162,10 +162,10 @@ router.get("/products", auth_1.requireAuth, async (req, res, next) => {
         ]);
         res.json({
             products,
-            pagination: {
-                page: Number(page), limit: take, total,
-                pages: Math.ceil(total / take),
-            },
+            page: Number(page),
+            limit: take,
+            total,
+            pages: Math.ceil(total / take),
         });
     }
     catch (err) {

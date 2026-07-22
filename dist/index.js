@@ -66,8 +66,25 @@ app.use((0, cors_1.default)({
 app.use(express_1.default.json({ limit: "20mb" }));
 app.use(express_1.default.urlencoded({ extended: true }));
 // ─── Health check ─────────────────────────────────────────────────────────────
-app.get("/health", (_req, res) => {
-    res.json({ status: "ok", service: "inventory", timestamp: new Date().toISOString() });
+app.get("/health", async (_req, res) => {
+    try {
+        const productCount = await database_1.prisma.product.count();
+        const userCount = await database_1.prisma.user.count();
+        res.json({
+            status: "ok",
+            service: "inventory",
+            timestamp: new Date().toISOString(),
+            db: { products: productCount, users: userCount }
+        });
+    }
+    catch (err) {
+        res.json({
+            status: "error",
+            service: "inventory",
+            timestamp: new Date().toISOString(),
+            db: { error: err?.message || "Connection failed" }
+        });
+    }
 });
 // ─── Routes ───────────────────────────────────────────────────────────────────
 app.use("/api/inventory/auth", auth_1.default);

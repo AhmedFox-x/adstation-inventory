@@ -17,6 +17,11 @@ const products = [
     { name: "بانر فينيل", variant: "2×1 متر", stock: 3, minStock: 5, category: "مواد إعلانية" },
 ];
 async function main() {
+    const existing = await prisma.product.count();
+    if (existing > 0) {
+        console.log(`ℹ️  Database already has ${existing} products — skipping seed.`);
+        return;
+    }
     console.log("Seeding inventory products...");
     for (const p of products) {
         await prisma.product.create({
