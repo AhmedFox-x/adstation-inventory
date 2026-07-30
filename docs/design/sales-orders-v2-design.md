@@ -41,13 +41,21 @@
 
 ### 1.3 Approval Gate
 
-- حد الاعتماد (threshold) مخزّن في **جدول إعدادات منفصل (`SystemSettings`)** مش hardcoded
-- الحقل: `salesApprovalThreshold`, القيمة الافتراضية: `5000` (بالجنيه)
-- لو `grandTotal > threshold`: الطلب محتاج `approval` قبل `deliver`
-- الـ Manager يقدر يعمل Confirm و Process و Ship
-- لكن الـ **Owner** بس اللي يقدر يعمل `approve` و `reject`
-- الـ `deliver` من Manager ممنوع (403) إلا لو `approvalStatus === "approved"`
-- صاحب الشركة يقدر يغير الـ threshold من غير ما يحتاج deploy
+حد الاعتماد (threshold) مخزّن في **جدول إعدادات منفصل (`SystemSettings`)** مش hardcoded.
+الحقل: `salesApprovalThreshold`, القيمة الافتراضية: `5000` (بالجنيه).
+
+**الـ Approval هو Gate قبل Confirm، مش شرط قبل Deliver:**
+
+| السيناريو | اللي بيحصل |
+|-----------|-----------|
+| `grandTotal ≤ threshold` | Confirm عادي → `status = confirmed` + Reserve تلقائي |
+| `grandTotal > threshold` | محاولة Confirm → `approvalStatus = pending` + Notification للمالك. **الـ Status يفضل `draft`**. **مفيش Reserve** |
+| Owner → Approve | `status = confirmed` + `approvalStatus = approved` + Reserve تلقائي. Notification للمنشئ |
+| Owner → Reject | `approvalStatus = rejected` + `rejectionNote`. Notification للمنشئ. الطلب يفضل `draft` — يقدر المنشئ يعدل الكميات ويحاول تاني |
+
+**ليه كده؟** عشان ميحصلش Reserve لطلبات لسه مرفوضة. المخزون بيتحجز بس بعد الموافقة.
+
+صاحب الشركة يقدر يغير الـ threshold من غير ما يحتاج deploy.
 
 ---
 
@@ -93,17 +101,17 @@
 
 | From | To | Requires | Notes |
 |------|----|----------|-------|
-| draft | confirmed | Stock check | Auto-reserve (atomic `increment reservedStock`) |
+| draft | confirmed | Stock check + Approval check | لو فوق threshold: Confirm يفضل draft مع approvalStatus=pending. Confirm الفعلي بيحصل بس بعد Approve |
 | draft | cancelled | — | Only if no items delivered |
 | confirmed | processing | — | |
 | confirmed | cancelled | — | Releases reservedStock بالكامل |
 | processing | shipped | — | |
 | processing | cancelled | — | Releases reservedStock بالكامل |
 | shipped | delivered | Delivery items | Atomic stock + reservedStock decrement |
-| shipped | partially_delivered | Delivery items | Partial delivery |
+| shipped | partially_delivered | Delivery items | Partial delivery (reservation لسه active للباقي) |
 | shipped | cancelled | — | Only if no items delivered |
 | partially_delivered | delivered | Remaining items | |
-| partially_delivered | cancelled | — | يرجع reservedStock للكمية المتبقية فقط (orderedQty - deliveredQty) |
+| partially_delivered | cancelled | — | يرجع reservedStock للكمية المتبقية فقط: `reservedStock -= (orderedQty - deliveredQty)` |
 | delivered | closed | — | Final state |
 | cancelled | *none* | — | Terminal state |
 | closed | *none* | — | Terminal state |
@@ -143,7 +151,8 @@ model Product {
 // ===== Reservation تعديل =====
 model Reservation {
   // الحقول الموجودة ...
-  fulfilledQty Int @default(0)            // ➕ جديد — الكمية اللي اتنفذت فعليًا من الحجز ده
+  salesOrderItemId String?                 // ➕ جديد — ربط الـ Reservation بـ item معين في الطلب (مش الطلب كله)
+  fulfilledQty     Int     @default(0)    // ➕ جديد — الكمية اللي اتنفذت فعليًا من الحجز ده
 }
 
 // ===== SalesOrderItem تعديل =====
@@ -264,16 +273,22 @@ movingAvgCost = totalCostOfAllPurchases / totalQuantityPurchased
 التفاصيل:
 - المصدر: `PurchaseOrderItem` حيث `PurchaseOrder.status === "received"`
 - كل ما يدخل أمر شراء جديد معتمد، يتحدّث الـ Moving Average
-- وقت إنشاء `SalesOrderItem`، بنسجل قيمة `movingAvgCost` الحالية في `costPrice`
+- وقت **Confirm أو Approve** (مش وقت الإنشاء)، بنسجل قيمة `movingAvgCost` الحالية في `costPrice`
+  - لو الطلب أقل من threshold: Snapshot أخذ عند Confirm
+  - لو الطلب فوق threshold: Snapshot أخذ عند Approve
+- **ليه مش وقت الإنشاء أو التوصيل؟** لأن متوسط التكلفة ممكن يتغير بين اليومين، ونفسر我们把 القيمة وقت اعتماد الطلب مش وقت التوصيل
 - لو مفيش مشتريات خالص للمنتج: `costPrice = 0` (أو يقدر المستخدم يدخله يدويًا)
 
 ### 3.4 Partial Delivery — Reservation Tracking
 
-- كل `Reservation` عنده `fulfilledQty` (الكمية اللي اتنفذت فعليًا)
-- عند Confirm: `reservedStock += orderedQty`، وبنشئ Reservation linked لكل item
-- عند Deliver: الكمية الموصلة بتخصم من `reservedStock` وبتزود `fulfilledQty` في الـ Reservation
+- كل `Reservation` مرتبط بـ `SalesOrderItem` (مش بالـ Order كامل)، وكل item ليه Reservation مستقل
+- عند Confirm/Approve: `reservedStock += orderedQty` للـ item، وبنشئ Reservation مع `salesOrderItemId`
+- عند Deliver:
+  - الكمية الموصلة بتخصم من `reservedStock` وبتزود `fulfilledQty` في الـ Reservation
+  - الـ Reservation **يفضل Active** طالما `fulfilledQty < orderedQty` (ordered = 100, fulfilled = 30, remaining = 70)
+  - Reservation يتقفل بس لما `fulfilledQty >= orderedQty`
 - Cancel بعد Partial: `reservedStock -= (orderedQty - deliveredQty)` — مش `orderedQty`
-- ده بيسمح بتتبع دقيق: أي reservation اتنفذ قد إيه
+- ده بيسمح بتتبع دقيق: أي reservation اتنفذ قد إيه، وأي جزء لسه متبقي
 
 ### 3.5 Approval Status
 
@@ -290,7 +305,23 @@ movingAvgCost = totalCostOfAllPurchases / totalQuantityPurchased
 - `SalesOrderStatusHistory.afterState`: JSON للـ Order كامل بعد الـ transition
 - بيسمح بعمل مقارنة دقيقة: إيه اللي اتغير بالظبط
 
-### 3.7 Order Number Format
+### 3.8 Schema Tests (Phase 2)
+
+قبل أي Backend أو Permissions، نكتب اختبارات للـ Schema نفسه:
+
+| Test | What it verifies |
+|------|-----------------|
+| Migration Up | إن الـ migration الجديد يشتغل من غير أخطار على Database فاضية |
+| Foreign Keys | `SalesOrder.clientId → Client.id`، `SalesOrderItem.productId → Product.id`، `SalesDelivery.salesOrderId → SalesOrder.id`، إلخ |
+| Unique Constraints | `SalesOrder.orderNumber`، `SalesDelivery.deliveryNumber` |
+| Indexes | إن الـ indexes المطلوبة اتعملت (خصوصًا `@@index([status])`، `@@index([clientId])`، `@@index([createdAt])`) |
+| Default Values | `SalesOrder.status = "draft"`، `SalesOrder.approvalStatus = "none"`، `Product.unit = "قطعة"`، `Notification.priority = "normal"` |
+| Required Fields | إن `clientId` و `items` مطلوبين في `SalesOrder` |
+| Cascade Delete | `SalesOrderItem` يتحدف لما `SalesOrder` يتحدف (onDelete: Cascade) |
+
+**الهدف:** التأكد إن الـ Schema نفسه صحيح قبل ما نكتب أي business logic فوقيه.
+
+### 3.9 Order Number Format
 
 - الصيغة: `SO-YYYYMM-NNNNNN`
 - مثال: `SO-202607-000001`
@@ -328,10 +359,13 @@ movingAvgCost = totalCostOfAllPurchases / totalQuantityPurchased
 ### 4.3 Approval Threshold Enforcement
 
 فى الـ Backend:
-- قبل `confirm`: لو `grandTotal > salesApprovalThreshold` (من `SystemSettings`) → `approvalStatus = pending`
-- قبل `deliver`: لو `approvalStatus === "pending"` والمستخدم `role === manager` → 403
-- الـ `approve` و `reject` متاحين لـ Owner بس
-- لو `approvalStatus === "rejected"` → ممنوع `deliver` تمامًا
+- قبل `confirm`:
+  - لو `grandTotal ≤ salesApprovalThreshold` (من `SystemSettings`) → Confirm عادي: `status = confirmed`, Reserve
+  - لو `grandTotal > salesApprovalThreshold` → `approvalStatus = pending`, `status` يفضل `draft`, Notification للمالك. **مفيش Reserve**
+- الـ `approve`: Owner بس. بيحول `status = confirmed` ويعمل Reserve ويسجل costPrice Snapshot
+- الـ `reject`: Owner بس. `approvalStatus = rejected`, `rejectionNote`, Notification للمنشئ
+- لو `approvalStatus === "rejected"` → ممنوع الـ Confirm. يقدر المنشئ يعدل الطلب ويعمل Confirm تاني
+- قبل `deliver`: لو `approvalStatus === "pending"` → 403 لأي دور
 
 ---
 
@@ -481,9 +515,12 @@ movingAvgCost = totalCostOfAllPurchases / totalQuantityPurchased
 
 | Operation | Tables affected | Transaction | Rollback behavior |
 |-----------|---------------|------------|-------------------|
-| Confirm | SalesOrder (status + approvalStatus) + SalesOrderStatusHistory + Product (reservedStock) + Reservation + Notification (if > threshold) + InventoryLog | ✅ `$transaction` | لو فشل الـ reservedStock أو الـ Notification، ميحصلش transition |
-| Deliver | SalesOrder (status) + SalesOrderStatusHistory + SalesDelivery + SalesDeliveryItem + SalesOrderItem (deliveredQty) + Reservation (fulfilledQty) + Product (stock + reservedStock) + InventoryLog | ✅ `$transaction` | لو أي item فشل، الكل يرجع |
-| Cancel | SalesOrder (status) + SalesOrderStatusHistory + Reservation (status) + Product (reservedStock) + InventoryLog | ✅ `$transaction` | لو فشل تحرير المخزون، ميحصلش transition |
+| Confirm (≤ threshold) | SalesOrder (status) + SalesOrderStatusHistory + Product (reservedStock) + Reservation + costPrice Snapshot + Notification + InventoryLog | ✅ `$transaction` | لو فشل الـ reservedStock أو الـ Notification، ميحصلش transition |
+| Approve (was pending) | SalesOrder (status → confirmed + approvalStatus) + SalesOrderStatusHistory + Product (reservedStock) + Reservation + costPrice Snapshot + Notification + InventoryLog | ✅ `$transaction` | زي Confirm بالظبط — الـ Reserve بيتعمل هنا مش في Confirm |
+| Pending Confirm (> threshold) | SalesOrder (approvalStatus → pending) + SalesOrderStatusHistory + Notification | ✅ `$transaction` | مفيش Reserve لسه — مجرد إشعار |
+| Deliver | SalesOrder (status) + SalesOrderStatusHistory + SalesDelivery + SalesDeliveryItem + SalesOrderItem (deliveredQty) + Reservation (fulfilledQty, status) + Product (stock + reservedStock) + InventoryLog | ✅ `$transaction` | لو أي item فشل، الكل يرجع. الـ Reservation يفضل Active لو باقي remaining |
+| Cancel (confirmed+) | SalesOrder (status) + SalesOrderStatusHistory + Reservation (status → cancelled) + Product (reservedStock) + InventoryLog | ✅ `$transaction` | لو فشل تحرير المخزون، ميحصلش transition |
+| Cancel (draft/pending) | SalesOrder (status) + SalesOrderStatusHistory | ❌ مفيش Reserve | مجرد تغيير status |
 | Approve | SalesOrder (approvalStatus + approvedAt + approvedBy) + SalesOrderStatusHistory + Notification | ✅ `$transaction` | كامل |
 | Reject | SalesOrder (approvalStatus + rejectionNote) + SalesOrderStatusHistory + Notification | ✅ `$transaction` | كامل |
 | Create | SalesOrder + SalesOrderItem (snapshot) + SalesOrderStatusHistory + (Reservation لو auto-reserve?) | ❌ عملية واحدة | Create نفسه atomic |
@@ -552,14 +589,14 @@ movingAvgCost = totalCostOfAllPurchases / totalQuantityPurchased
 |------|--------|------------|
 | Partial Delivery | كل item عنده deliveredQty منفصلة — لو مش كل items اكتملت → `partially_delivered` | Backend transition logic |
 | Order Expiry | Draft/Confirmed orders with `expiresAt < NOW()` → auto-cancel | Daily job OR قبل confirm/process/ship/deliver — **مش قبل GET** |
-| Approval Threshold | `grandTotal > salesApprovalThreshold` (من SystemSettings) → Approval مطلوب | Middleware في route confirm + deliver |
+| Approval Gate Before Reserve | `grandTotal > salesApprovalThreshold` → Confirm بيحط `approvalStatus = pending` بس. Reserve و costPrice Snapshot بيتعملوا بعد Approve فقط | Middleware في route confirm |
 | Reserved Stock | Confirm → `reservedStock += qty`; Deliver → `reservedStock -= deliveredQty`; Cancel → `reservedStock -= (orderedQty - deliveredQty)` | Atomic increment/decrement |
 | Snapshot Frozen | Product name/SKU/barcode/category/brand/unit تُسجل وقت الإنشاء ومبتتغيرش | Written at create time |
 | Soft Delete Only | ممنوع DELETE على أي سجل ليه تاريخ حركة — Soft Delete (`deletedAt`) فقط | DB-level + route check |
 | Transaction Safety | كل multi-table operation جوه `$transaction` — ودايمًا تتضمن InventoryLog | Code review rule |
 | Notification Consistency | الـ Notifications بتتنشأ جوه نفس transaction بتاعة الحدث | Code review rule |
 | Audit Completeness | كل status transition يسجل IP + User Agent + before/after JSON | Middleware |
-| Cost Price — Moving Average | `costPrice` من moving average لآخر PurchaseOrder معتمد | حساب عند إنشاء الـ Order |
+| Cost Price — Moving Average | `costPrice` من moving average لآخر PurchaseOrder معتمد | Snapshot عند Confirm (أقل من threshold) أو Approve (فوق threshold) — مش وقت الإنشاء |
 | No Hard Delete for Orders | ممنوع DELETE على SalesOrder لأي سبب — `isArchived` أو `deletedAt` فقط | Route-level enforcement |
 
 ---
@@ -569,8 +606,8 @@ movingAvgCost = totalCostOfAllPurchases / totalQuantityPurchased
 | Phase | Scope | Files | Tests |
 |-------|-------|-------|-------|
 | P0 | Design Freeze | هذا المستند | — |
-| P1 | Schema + Migration | `schema.prisma`, `prisma/migrations/` | — |
-| P2 | Regression Tests (Schema) | `tests/schema/` | ✅ تأكيد إن الـ migration صح |
+| P1 | Schema + Migration + Backup | `schema.prisma`, `prisma/migrations/` | — |
+| P2 | Schema Tests | `tests/schema/` | ✅ Migration Up, Foreign Keys, Unique Constraints, Indexes, Default Values |
 | P3 | Permissions + Seed | `permissions.ts`, `seed.ts` | ✅ تأكيد إن Owner لسه عنده صلاحياته |
 | P4 | Backend | `sales-orders.ts`, `notifications.ts`, routes | ✅ Backend Integration Tests |
 | P5 | Backend Tests | `tests/sales-orders/` | ✅ Positive + Negative لكل endpoint |
