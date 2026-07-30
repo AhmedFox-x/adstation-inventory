@@ -11,6 +11,8 @@
 [Create Draft] → [Confirm] → [Process] → [Ship] → [Deliver] → [Close]
                       ↓           ↓          ↓          ↓
                   Auto-Reserve  (pick)    (dispatch)   Partial OK
+                                                        ↓
+                                                   [Approve] ← إذا فوق threshold
 ```
 
 ### 1.1 User Stories
@@ -20,6 +22,7 @@
 | Manager | ينشئ طلب بيع جديد لعميل، ويعدل في المسودة، ويؤكد الطلب |
 | Manager | يشحن الطلب ويوثق التوصيل (كلي أو جزئي) |
 | Owner | يعتمد الطلبات الكبيرة (أعلى من حد معين) قبل التوصيل |
+| Owner | يرفض الطلبات الكبيرة مع سبب |
 | Viewer | يشاهد حالة الطلبات والتقارير فقط |
 
 ### 1.2 Flow Details
@@ -27,19 +30,24 @@
 | Step | Who | What happens |
 |------|-----|-------------|
 | Create | Manager | يدخل العميل + المنتجات + الكميات + السعر. الحالة: `draft` |
-| Confirm | Manager | يتحقق من توفر المخزون → يحجز الكمية (`reservedStock += qty`). الحالة: `confirmed` |
+| Confirm | Manager | يتحقق من توفر المخزون → يحجز الكمية (`reservedStock += qty`). الحالة: `confirmed`. لو total > threshold → تنشأ Notification للمالك |
 | Process | Manager | تحضير الطلب للتوصيل. الحالة: `processing` |
 | Ship | Manager | شحن الطلب. الحالة: `shipped` |
-| Deliver | Manager/Driver | يسلم الكميات الفعلية → ينقص `reservedStock` + `stock`. الحالة: `delivered` أو `partially_delivered` |
+| Approve | Owner | اعتماد طلب كبير. الحالة: `approvalStatus = approved` |
+| Reject | Owner | رفض طلب كبير مع سبب. الحالة: `approvalStatus = rejected` |
+| Deliver | Manager/Owner | يسلم الكميات الفعلية → ينقص `reservedStock` + `stock`. الحالة: `delivered` أو `partially_delivered` |
 | Close | Manager | إغلاق الطلب نهائيًا. الحالة: `closed` |
 | Cancel | Manager | إلغاء الطلب ← يرجع `reservedStock`. الحالة: `cancelled` |
 
-### 1.3 Approval Gate (جديد)
+### 1.3 Approval Gate
 
-- إذا `grandTotal > APPROVAL_THRESHOLD (5000 EGP)`، الطلب **لازم يوخذ APPROVAL** قبل ما يوصل
+- حد الاعتماد (threshold) مخزّن في **جدول إعدادات منفصل (`SystemSettings`)** مش hardcoded
+- الحقل: `salesApprovalThreshold`, القيمة الافتراضية: `5000` (بالجنيه)
+- لو `grandTotal > threshold`: الطلب محتاج `approval` قبل `deliver`
 - الـ Manager يقدر يعمل Confirm و Process و Ship
-- لكن الـ **Owner** بس اللي يقدر يعمل Deliver لو total > threshold
-- لو total ≤ threshold، الـ Manager يقدر يكمل للتوصيل مباشة
+- لكن الـ **Owner** بس اللي يقدر يعمل `approve` و `reject`
+- الـ `deliver` من Manager ممنوع (403) إلا لو `approvalStatus === "approved"`
+- صاحب الشركة يقدر يغير الـ threshold من غير ما يحتاج deploy
 
 ---
 
@@ -48,37 +56,37 @@
 ### 2.1 Valid Transitions
 
 ```
-                ┌──────────┐
-                │  draft   │
-                └────┬─────┘
-                     │
-                ┌────▼─────┐
-                │ confirmed │
-                └────┬─────┘
-                     │
-                ┌────▼─────┐
-                │processing│
-                └────┬─────┘
-                     │
-                ┌────▼─────┐
-                │  shipped  │
-                └────┬─────┘
-                     │
-           ┌─────────┼──────────┐
-           │         │          │
-     ┌─────▼──────┐ ┌▼────────┐ │
-     │delivered   │ │partially│ │
-     │            │ │delivered│ │
-     └─────┬──────┘ └────┬────┘ │
-           │             │      │
-           └──────┬──────┘      │
-                  │             │
-             ┌────▼─────┐       │
-             │  closed   │       │
-             └──────────┘       │
-                           ┌────▼─────┐
-                           │cancelled │
-                           └──────────┘
+                 ┌──────────┐
+                 │  draft   │
+                 └────┬─────┘
+                      │
+                 ┌────▼─────┐
+                 │ confirmed │
+                 └────┬─────┘
+                      │
+                 ┌────▼─────┐
+                 │processing│
+                 └────┬─────┘
+                      │
+                 ┌────▼─────┐
+                 │  shipped  │
+                 └────┬─────┘
+                      │
+            ┌─────────┼──────────┐
+            │         │          │
+      ┌─────▼──────┐ ┌▼────────┐ │
+      │delivered   │ │partially│ │
+      │            │ │delivered│ │
+      └─────┬──────┘ └────┬────┘ │
+            │             │      │
+            └──────┬──────┘      │
+                   │             │
+              ┌────▼─────┐       │
+              │  closed   │       │
+              └──────────┘       │
+                            ┌────▼─────┐
+                            │cancelled │
+                            └──────────┘
 ```
 
 ### 2.2 Transition Table
@@ -88,14 +96,14 @@
 | draft | confirmed | Stock check | Auto-reserve (atomic `increment reservedStock`) |
 | draft | cancelled | — | Only if no items delivered |
 | confirmed | processing | — | |
-| confirmed | cancelled | — | Releases reservedStock |
+| confirmed | cancelled | — | Releases reservedStock بالكامل |
 | processing | shipped | — | |
-| processing | cancelled | — | Releases reservedStock |
-| shipped | delivered | Delivery items | Atomic stock decrement |
+| processing | cancelled | — | Releases reservedStock بالكامل |
+| shipped | delivered | Delivery items | Atomic stock + reservedStock decrement |
 | shipped | partially_delivered | Delivery items | Partial delivery |
 | shipped | cancelled | — | Only if no items delivered |
 | partially_delivered | delivered | Remaining items | |
-| partially_delivered | cancelled | — | Only undelivered qty releases reserved |
+| partially_delivered | cancelled | — | يرجع reservedStock للكمية المتبقية فقط (orderedQty - deliveredQty) |
 | delivered | closed | — | Final state |
 | cancelled | *none* | — | Terminal state |
 | closed | *none* | — | Terminal state |
@@ -103,8 +111,11 @@
 ### 2.3 Expiry Rule
 
 - الطلبات اللي حالتها `draft` أو `confirmed` و `expiresAt` عدى الوقت الحالي → **auto-cancel**
-- التشغيل: قبل أي عملية transition (في middleware أو قبل كل transition)
-- الـ auto-cancel يحرر `reservedStock` وينشئ `SalesOrderStatusHistory` بـ `changedBy: "system"`
+- التشغيل:
+  - **Daily Job** (أو كل ساعة) لو في Scheduler — هو الحل الأمثل
+  - لو مفيش Scheduler: `expireSalesOrders()` تتنادى قبل **confirm, process, ship, deliver** فقط
+  - **ممنوع** استدعاؤها قبل `GET` — لأن GET مش المفروض يغير Database
+- الـ auto-cancel يحرر `reservedStock` وينشئ `SalesOrderStatusHistory` بـ `changedBy: "system"` ويخلق `Notification` من نوع `order_expired`
 
 ---
 
@@ -113,6 +124,14 @@
 ### 3.1 Model Changes (مضافة فوق الموجود)
 
 ```prisma
+// ===== نظام جديد: الإعدادات =====
+model SystemSettings {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  value     String
+  updatedAt DateTime @updatedAt
+}
+
 // ===== Product تعديل =====
 model Product {
   // الحقول الموجودة ...
@@ -121,12 +140,30 @@ model Product {
   deliveryItems SalesDeliveryItem[]       // ➕ جديد
 }
 
+// ===== Reservation تعديل =====
+model Reservation {
+  // الحقول الموجودة ...
+  fulfilledQty Int @default(0)            // ➕ جديد — الكمية اللي اتنفذت فعليًا من الحجز ده
+}
+
 // ===== SalesOrderItem تعديل =====
 model SalesOrderItem {
   // الحقول الموجودة ...
   productName  String?                    // ➕ Snapshot
   productSku   String?                    // ➕ Snapshot
   unit         String?                    // ➕ Snapshot
+  barcode      String?                    // ➕ Snapshot
+  category     String?                    // ➕ Snapshot
+  brand        String?                    // ➕ Snapshot
+}
+
+// ===== SalesOrder تعديل =====
+model SalesOrder {
+  // الحقول الموجودة ...
+  approvalStatus String @default("none")  // ➕ جديد: none | pending | approved | rejected
+  approvedAt     DateTime?
+  approvedBy     String?
+  rejectionNote  String?                  // ➕ جديد — سبب الرفض
 }
 
 // ===== SalesOrderStatusHistory تعديل =====
@@ -134,6 +171,8 @@ model SalesOrderStatusHistory {
   // الحقول الموجودة ...
   ip        String?                       // ➕ جديد
   userAgent String?                       // ➕ جديد
+  beforeState Json?                       // ➕ جديد — Snapshot JSON للحالة قبل التغيير
+  afterState  Json?                       // ➕ جديد — Snapshot JSON للحالة بعد التغيير
 }
 
 // ===== نماذج جديدة =====
@@ -143,6 +182,11 @@ model SalesDelivery {
   deliveryNumber  String   @unique
   deliveredAt     DateTime @default(now())
   deliveredBy     String?
+  driverName      String?                  // ➕ اسم السائق
+  vehicle         String?                  // ➕ رقم العربية / نوعها
+  proofImage      String?                  // ➕ صورة إثبات التوصيل (Base64)
+  signature       String?                  // ➕ توقيع العميل (Base64)
+  gpsLocation     String?                  // ➕ موقع التوصيل (lat,lng)
   notes           String?
   createdAt       DateTime @default(now())
 
@@ -153,29 +197,48 @@ model SalesDelivery {
 }
 
 model SalesDeliveryItem {
-  id             String  @id @default(cuid())
-  deliveryId     String
+  id              String  @id @default(cuid())
+  deliveryId      String
   salesOrderItemId String
-  productId      String
-  quantity       Int
-  unit           String?
+  productId       String
+  quantity        Int
+  unit            String?
 
-  delivery      SalesDelivery  @relation(fields: [deliveryId], references: [id], onDelete: Cascade)
+  delivery       SalesDelivery  @relation(fields: [deliveryId], references: [id], onDelete: Cascade)
   salesOrderItem SalesOrderItem @relation(fields: [salesOrderItemId], references: [id])
-  product       Product        @relation(fields: [productId], references: [id])
+  product        Product        @relation(fields: [productId], references: [id])
 }
 
 model Notification {
-  id        String   @id @default(cuid())
-  userId    String?
-  type      String   // low_stock | order_confirmed | order_delivered | order_expired | approval_needed
-  title     String
-  message   String
-  referenceType String?  // sales_order | purchase_order | product
-  referenceId   String?
-  isRead    Boolean  @default(false)
-  createdAt DateTime @default(now())
+  id              String    @id @default(cuid())
+  userId          String?
+  type            String    // low_stock | order_confirmed | order_delivered | order_expired | approval_needed | order_approved | order_rejected
+  title           String
+  message         String
+  referenceType   String?   // sales_order | purchase_order | product
+  referenceId     String?
+  priority        String    @default("normal")  // low | normal | high | urgent
+  icon            String?                       // اسم الأيقونة (lucide)
+  actionUrl       String?                       // رابط مباشة للصفحة المعنية
+  createdBySystem Boolean   @default(false)
+  isRead          Boolean   @default(false)
+  readAt          DateTime?
+  deletedAt       DateTime?
+  createdAt       DateTime  @default(now())
 }
+
+// ===== Indexes إضافية =====
+// SalesOrder: @@index([orderNumber])
+// SalesOrder: @@index([status])
+// SalesOrder: @@index([clientId])
+// SalesOrder: @@index([expectedDeliveryDate])
+// SalesOrder: @@index([createdAt])
+// SalesOrder: @@index([approvalStatus])
+// SalesOrderItem: @@index([productId])
+// SalesOrderStatusHistory: @@index([orderId, createdAt])
+// SalesDelivery: @@index([salesOrderId])
+// SalesDelivery: @@index([deliveredAt])
+// Notification: @@index([userId, isRead, createdAt])
 ```
 
 ### 3.2 Product Snapshot Detail
@@ -183,26 +246,56 @@ model Notification {
 عند إنشاء `SalesOrderItem`، بناخد Snapshot من الـ Product وقتها:
 - `productName` ← `product.name`
 - `productSku` ← `product.sku`
+- `barcode` ← `product.barcode`
+- `category` ← `product.category`
+- `brand` ← `product.brand` (لو موجود — هيضاف كحقل جديد بعدين)
 - `unit` ← `product.unit`
 
-ده عشان لو العميل غير اسم المنتج بعدين، الـ Order القديم يفضل شايف القيمة اللي كانت وقت الطلب.
+ده عشان لو العميل غير بيانات المنتج بعدين، الـ Order القديم يفضل شايف القيمة اللي كانت وقت الطلب.
 
-### 3.3 Audit Trail Detail
+### 3.3 Cost Price — Moving Average
 
-في `SalesOrderStatusHistory` بنضيف:
-- `ip` — عنوان IP اللي عمل الـ transition
-- `userAgent` — الـ User-Agent بتاع الطلب
+سعر التكلفة في `SalesOrderItem.costPrice` بيتحسب كـ **Moving Average**:
 
-بيتم تسجيلهم آليًا من `req.ip` و `req.headers['user-agent']` في كل transition.
+```
+movingAvgCost = totalCostOfAllPurchases / totalQuantityPurchased
+```
 
-### 3.4 Partial Delivery Detail
+التفاصيل:
+- المصدر: `PurchaseOrderItem` حيث `PurchaseOrder.status === "received"`
+- كل ما يدخل أمر شراء جديد معتمد، يتحدّث الـ Moving Average
+- وقت إنشاء `SalesOrderItem`، بنسجل قيمة `movingAvgCost` الحالية في `costPrice`
+- لو مفيش مشتريات خالص للمنتج: `costPrice = 0` (أو يقدر المستخدم يدخله يدويًا)
 
-- كل `SalesOrderItem` عنده `orderedQty` و `deliveredQty`
-- في كل delivery: نضيف سجل في `SalesDeliveryItem` بالكمية الفعلية
-- نقارن `sum(deliveredQty)` بـ `orderedQty` لكل item:
-  - لو كل items اكتملت → `delivered`
-  - لو في items ناقصة → `partially_delivered`
-- الـ `reservedStock` بتتنقص بنفس كمية الـ delivery (مش كل الكمية)
+### 3.4 Partial Delivery — Reservation Tracking
+
+- كل `Reservation` عنده `fulfilledQty` (الكمية اللي اتنفذت فعليًا)
+- عند Confirm: `reservedStock += orderedQty`، وبنشئ Reservation linked لكل item
+- عند Deliver: الكمية الموصلة بتخصم من `reservedStock` وبتزود `fulfilledQty` في الـ Reservation
+- Cancel بعد Partial: `reservedStock -= (orderedQty - deliveredQty)` — مش `orderedQty`
+- ده بيسمح بتتبع دقيق: أي reservation اتنفذ قد إيه
+
+### 3.5 Approval Status
+
+- `approvalStatus` بقيمة: `none` (مافيش approval مطلوب) | `pending` | `approved` | `rejected`
+- القيمة الافتراضية: `none`
+- لو `grandTotal > threshold` عند Confirm: `approvalStatus = pending`
+- الـ Owner يعمل `approve` → `approvalStatus = approved`, `approvedAt`, `approvedBy`
+- الـ Owner يعمل `reject` → `approvalStatus = rejected`, `rejectionNote`
+- الـ Manager مش قادر يعدل approvalStatus خالص (صلاحية `approve` لـ Owner بس)
+
+### 3.6 Audit Snapshots
+
+- `SalesOrderStatusHistory.beforeState`: JSON للـ Order كامل قبل الـ transition
+- `SalesOrderStatusHistory.afterState`: JSON للـ Order كامل بعد الـ transition
+- بيسمح بعمل مقارنة دقيقة: إيه اللي اتغير بالظبط
+
+### 3.7 Order Number Format
+
+- الصيغة: `SO-YYYYMM-NNNNNN`
+- مثال: `SO-202607-000001`
+- الترقيم شهري (يعيد من 1 كل شهر جديد)
+- يتحقق من uniqueness في نطاق الشهر (يجيب آخر رقم في الشهر الحالي ويزيد 1)
 
 ---
 
@@ -212,32 +305,33 @@ model Notification {
 
 | Permission | Phase | Roles | Notes |
 |-----------|-------|-------|-------|
-| `sales_orders.view` | P2 | Owner, Manager | |
-| `sales_orders.create` | P2 | Owner, Manager | |
-| `sales_orders.edit_draft` | P2 | Owner, Manager | Only draft |
-| `sales_orders.confirm` | P2 | Owner, Manager | |
-| `sales_orders.process` | P2 | Owner, Manager | |
-| `sales_orders.ship` | P2 | Owner, Manager | |
-| `sales_orders.deliver` | P2 | Owner, Manager | Manager فقط لو ≤ threshold |
-| `sales_orders.approve` | P2 | Owner فقط | **جديد** — لاعتماد الطلبات فوق الـ threshold |
-| `sales_orders.close` | P2 | Owner, Manager | |
-| `sales_orders.cancel` | P2 | Owner, Manager | |
+| `sales_orders.view` | P3 | Owner, Manager | |
+| `sales_orders.create` | P3 | Owner, Manager | |
+| `sales_orders.edit_draft` | P3 | Owner, Manager | Only draft |
+| `sales_orders.confirm` | P3 | Owner, Manager | |
+| `sales_orders.process` | P3 | Owner, Manager | |
+| `sales_orders.ship` | P3 | Owner, Manager | |
+| `sales_orders.deliver` | P3 | Owner, Manager | Manager فقط لو معتمد أو أقل من threshold |
+| `sales_orders.approve` | P3 | Owner فقط | اعتماد الطلبات فوق الـ threshold |
+| `sales_orders.reject` | P3 | Owner فقط | رفض الطلبات مع سبب |
+| `sales_orders.close` | P3 | Owner, Manager | |
+| `sales_orders.cancel` | P3 | Owner, Manager | |
 
 ### 4.2 Role Mapping
 
 | Role | Sales Order Permissions |
 |------|------------------------|
-| owner | الكل (10) |
-| manager | الكل ما عدا `approve` (9) — مع شرط threshold على `deliver` |
+| owner | الكل (11) |
+| manager | الكل ما عدا `approve` و `reject` (9) — مع شرط threshold على `deliver` |
 | viewer | `view` فقط |
 
-### 4.3 Business Rule: Threshold Enforcement
+### 4.3 Approval Threshold Enforcement
 
 فى الـ Backend:
-- لو `grandTotal > 5000` والمستخدم الحالي `role === manager`:
-  - `deliver` → ممنوع (403) إلا لو الطلب معتمد (`approvedAt !== null`)
-  - أي محاولة `deliver` مباشة لطلب غير معتمد تترفض
-- الـ `approve` متاحة لـ Owner بس
+- قبل `confirm`: لو `grandTotal > salesApprovalThreshold` (من `SystemSettings`) → `approvalStatus = pending`
+- قبل `deliver`: لو `approvalStatus === "pending"` والمستخدم `role === manager` → 403
+- الـ `approve` و `reject` متاحين لـ Owner بس
+- لو `approvalStatus === "rejected"` → ممنوع `deliver` تمامًا
 
 ---
 
@@ -247,20 +341,21 @@ model Notification {
 
 | Method | Path | Permission | Phase | Notes |
 |--------|------|-----------|-------|-------|
-| GET | `/api/sales-orders` | view | P3 | Pagination, filters (status, clientId, date, search) |
-| GET | `/api/sales-orders/:id` | view | P3 | Full detail + items + history + deliveries |
-| POST | `/api/sales-orders` | create | P3 | Body: clientId, items[], reference, expectedDeliveryDate, expiresAt, notes |
-| PUT | `/api/sales-orders/:id` | edit_draft | P3 | Only if status === draft |
-| POST | `/api/sales-orders/:id/confirm` | confirm | P3 | Auto-reserve, stock check |
-| POST | `/api/sales-orders/:id/process` | process | P3 | |
-| POST | `/api/sales-orders/:id/ship` | ship | P3 | |
-| POST | `/api/sales-orders/:id/deliver` | deliver | P3 | Body: deliveredItems[{itemId, deliveredQty}]; checks approval threshold |
-| POST | `/api/sales-orders/:id/approve` | approve | P3 | **جديد** — Body: { note? }; sets approvedAt, approvedBy |
-| POST | `/api/sales-orders/:id/close` | close | P3 | |
-| POST | `/api/sales-orders/:id/cancel` | cancel | P3 | Releases reservedStock |
-| GET | `/api/sales-orders/:id/deliveries` | view | P3 | **جديد** — History of all deliveries |
-| GET | `/api/notifications` | view | P3 | **جديد** — List notifications for current user |
-| PUT | `/api/notifications/:id/read` | view | P3 | **جديد** — Mark notification as read |
+| GET | `/api/sales-orders` | view | P4 | Pagination + filters (see 5.3) |
+| GET | `/api/sales-orders/:id` | view | P4 | Full detail + items + history + deliveries |
+| POST | `/api/sales-orders` | create | P4 | Body: clientId, items[], reference, expectedDeliveryDate, expiresAt, notes |
+| PUT | `/api/sales-orders/:id` | edit_draft | P4 | Only if status === draft |
+| POST | `/api/sales-orders/:id/confirm` | confirm | P4 | Auto-reserve, stock check, approval check |
+| POST | `/api/sales-orders/:id/process` | process | P4 | |
+| POST | `/api/sales-orders/:id/ship` | ship | P4 | |
+| POST | `/api/sales-orders/:id/deliver` | deliver | P4 | Body: deliveredItems[{itemId, deliveredQty}]; checks approval |
+| POST | `/api/sales-orders/:id/approve` | approve | P4 | Body: { note? }; sets approvalStatus=approved |
+| POST | `/api/sales-orders/:id/reject` | reject | P4 | Body: { reason }; sets approvalStatus=rejected |
+| POST | `/api/sales-orders/:id/close` | close | P4 | |
+| POST | `/api/sales-orders/:id/cancel` | cancel | P4 | Releases reservedStock |
+| GET | `/api/sales-orders/:id/deliveries` | view | P4 | History of all deliveries |
+| GET | `/api/notifications` | view | P4 | List notifications for current user |
+| PUT | `/api/notifications/:id/read` | view | P4 | Mark notification as read |
 
 ### 5.2 Request/Response
 
@@ -286,18 +381,22 @@ model Notification {
 // Response — 201
 {
   id: string;
-  orderNumber: string;
+  orderNumber: string;           // SO-202607-000001
   status: "draft";
+  approvalStatus: "none";
   client: { id: string; name: string };
   items: Array<{
     id: string;
     productId: string;
     productName: string;
     productSku: string;
+    barcode: string;
+    category: string;
+    brand: string;
     unit: string;
     orderedQty: number;
     sellingPrice: number;
-    costPrice: number;
+    costPrice: number;            // Moving Average
     totalPrice: number;
   }>;
   subtotal: number;
@@ -313,6 +412,11 @@ model Notification {
 {
   deliveredItems: Array<{ itemId: string; deliveredQty: number }>;
   notes?: string;
+  driverName?: string;
+  vehicle?: string;
+  proofImage?: string;   // Base64
+  signature?: string;    // Base64
+  gpsLocation?: string;  // "30.0444,31.2357"
 }
 ```
 
@@ -328,8 +432,46 @@ model Notification {
 {
   id: string;
   status: string;
+  approvalStatus: "approved";
   approvedAt: string;
   approvedBy: string;
+}
+```
+
+#### POST /api/sales-orders/:id/reject
+
+```typescript
+// Request
+{
+  reason: string;
+}
+
+// Response
+{
+  id: string;
+  status: string;
+  approvalStatus: "rejected";
+  rejectionNote: string;
+}
+```
+
+### 5.3 Pagination & Filters
+
+```typescript
+// GET /api/sales-orders?page=1&limit=20&sort=createdAt&order=desc
+//   &search=مصطفى
+//   &status=confirmed,processing
+//   &client=clientId
+//   &from=2026-07-01&to=2026-07-31
+
+{
+  orders: SalesOrder[];
+  pagination: {
+    page: number;
+    limit: number;
+    total: number;
+    totalPages: number;
+  };
 }
 ```
 
@@ -339,13 +481,24 @@ model Notification {
 
 | Operation | Tables affected | Transaction | Rollback behavior |
 |-----------|---------------|------------|-------------------|
-| Confirm | SalesOrder (status) + SalesOrderStatusHistory + Product (reservedStock) | ✅ `$transaction` | لو فشل الـ reservedStock، ميحصلش transition |
-| Deliver | SalesOrder (status) + SalesOrderStatusHistory + SalesDelivery + SalesDeliveryItem + SalesOrderItem (deliveredQty) + Product (stock + reservedStock) | ✅ `$transaction` | لو أي item فشل، الكل يرجع |
-| Cancel | SalesOrder (status) + SalesOrderStatusHistory + Product (reservedStock) | ✅ `$transaction` | لو فشل تحرير المخزون، ميحصلش transition |
-| Approve | SalesOrder (approvedAt + approvedBy) + SalesOrderStatusHistory + Notification | ✅ `$transaction` | كامل |
-| Create | SalesOrder + SalesOrderItem (snapshot) + SalesOrderStatusHistory | ❌ عملية واحدة | Create本身就是 atomic |
+| Confirm | SalesOrder (status + approvalStatus) + SalesOrderStatusHistory + Product (reservedStock) + Reservation + Notification (if > threshold) + InventoryLog | ✅ `$transaction` | لو فشل الـ reservedStock أو الـ Notification، ميحصلش transition |
+| Deliver | SalesOrder (status) + SalesOrderStatusHistory + SalesDelivery + SalesDeliveryItem + SalesOrderItem (deliveredQty) + Reservation (fulfilledQty) + Product (stock + reservedStock) + InventoryLog | ✅ `$transaction` | لو أي item فشل، الكل يرجع |
+| Cancel | SalesOrder (status) + SalesOrderStatusHistory + Reservation (status) + Product (reservedStock) + InventoryLog | ✅ `$transaction` | لو فشل تحرير المخزون، ميحصلش transition |
+| Approve | SalesOrder (approvalStatus + approvedAt + approvedBy) + SalesOrderStatusHistory + Notification | ✅ `$transaction` | كامل |
+| Reject | SalesOrder (approvalStatus + rejectionNote) + SalesOrderStatusHistory + Notification | ✅ `$transaction` | كامل |
+| Create | SalesOrder + SalesOrderItem (snapshot) + SalesOrderStatusHistory + (Reservation لو auto-reserve?) | ❌ عملية واحدة | Create نفسه atomic |
 
-**قاعدة**:** كل عملية بتغير أكتر من جدول لازم تكون جوه `$transaction` مع rollback عند الفشل.
+**قاعدة:** كل عملية بتغير أكتر من جدول — ومن ضمنها دايمًا **`InventoryLog`** — لازم تكون جوه `$transaction` مع rollback عند الفشل.
+
+### InventoryLog في العمليات
+
+كل عملية من العمليات دي تسجل `InventoryLog`:
+
+| Process | Log type | Detail |
+|---------|----------|--------|
+| Confirm | `reservation` | "حجز {qty} وحدة من {product} للطلب {orderNumber}" |
+| Deliver | `sale` | "صرف {qty} وحدة من {product} للتوصيل للطلب {orderNumber}" |
+| Cancel (confirmed+) | `release` | "إلغاء حجز {qty} وحدة من {product} للطلب {orderNumber}" |
 
 ---
 
@@ -353,27 +506,29 @@ model Notification {
 
 | KPI | Source | Phase | SQL/Pseudo |
 |-----|--------|-------|------------|
-| عدد الطلبات النشطة (confirmed → shipped) | SalesOrder | P6 | `COUNT(*) WHERE status IN ('confirmed','processing','shipped','partially_delivered')` |
-| إجمالي مبيعات الشهر | SalesOrder | P6 | `SUM(grandTotal) WHERE status IN ('delivered','closed') AND orderDate >= startOfMonth` |
-| الطلبات المتأخرة (overdue) | SalesOrder | P6 | `COUNT(*) WHERE expectedDeliveryDate < NOW() AND status NOT IN ('delivered','closed','cancelled')` |
-| طلبات في انتظار الاعتماد | SalesOrder | P6 | `COUNT(*) WHERE status = 'shipped' AND grandTotal > 5000 AND approvedAt IS NULL` |
-| أفضل 5 عملاء مبيعات | SalesOrder + Client | P6 | `GROUP BY clientId ORDER BY SUM(grandTotal) DESC LIMIT 5` |
-| آخر 10 طلبات | SalesOrder | P6 | `ORDER BY createdAt DESC LIMIT 10` |
+| عدد الطلبات النشطة (confirmed → shipped) | SalesOrder | P8 | `COUNT(*) WHERE status IN ('confirmed','processing','shipped','partially_delivered')` |
+| إجمالي مبيعات الشهر | SalesOrder | P8 | `SUM(grandTotal) WHERE status IN ('delivered','closed') AND orderDate >= startOfMonth` |
+| إجمالي الربح الشهري (Gross Profit) | SalesOrderItem | P8 | `SUM((sellingPrice - costPrice) * deliveredQty) WHERE order.status IN ('delivered','closed') AND order.orderDate >= startOfMonth` |
+| الطلبات المتأخرة (overdue) | SalesOrder | P8 | `COUNT(*) WHERE expectedDeliveryDate < NOW() AND status NOT IN ('delivered','closed','cancelled')` |
+| طلبات في انتظار الاعتماد | SalesOrder | P8 | `COUNT(*) WHERE approvalStatus = 'pending'` |
+| أفضل 5 عملاء مبيعات (شهري) | SalesOrder + Client | P8 | `GROUP BY clientId ORDER BY SUM(grandTotal) DESC LIMIT 5` |
+| آخر 10 طلبات | SalesOrder | P8 | `ORDER BY createdAt DESC LIMIT 10` |
 
 ---
 
 ## 8. Notifications
 
-| Type | Trigger | Message | Target |
-|------|---------|---------|--------|
-| `order_confirmed` | Confirm success | "تم تأكيد الطلب {orderNumber} للعميل {clientName}" | Manager |
-| `order_delivered` | Deliver success | "تم توصيل الطلب {orderNumber}" | Manager |
-| `order_approved` | Approve success | "تم اعتماد الطلب {orderNumber}" | Manager |
-| `order_expired` | Auto-cancel | "تم إلغاء الطلب {orderNumber} لانتهاء صلاحيته" | Manager |
-| `approval_needed` | Confirm of order > 5000 | "الطلب {orderNumber} يحتاج اعتماد من المالك (قيمته {grandTotal} ج.م)" | Owner فقط |
-| `low_stock` | After deliver (if stock ≤ minStock) | "المخزون من {productName} وصل {stock} (الحد الأدنى: {minStock})" | Manager + Owner |
+| Type | Trigger | Message | Target | Priority |
+|------|---------|---------|--------|----------|
+| `order_confirmed` | Confirm success | "تم تأكيد الطلب {orderNumber} للعميل {clientName}" | Manager | normal |
+| `order_delivered` | Deliver success | "تم توصيل الطلب {orderNumber}" | Manager | normal |
+| `order_approved` | Approve success | "تم اعتماد الطلب {orderNumber}" | Manager | high |
+| `order_rejected` | Reject | "تم رفض الطلب {orderNumber} — {reason}" | Manager | urgent |
+| `order_expired` | Auto-cancel | "تم إلغاء الطلب {orderNumber} لانتهاء صلاحيته" | Manager | low |
+| `approval_needed` | Confirm where > threshold | "الطلب {orderNumber} من {clientName} يحتاج اعتماد (قيمته {grandTotal} ج.م)" | Owner | high |
+| `low_stock` | Deliver where stock ≤ minStock | "المخزون من {productName} وصل {stock} (الحد الأدنى: {minStock})" | Manager + Owner | urgent |
 
-الـ Notifications بتتنشأ جوه نفس `$transaction` بتاعة العملية الأصلية عشان لو فشلت، ميحصلش notification من غير حدث حقيقي.
+كل Notification بتتنشأ جوه نفس `$transaction` بتاعة العملية الأصلية — لو فشلت العملية، مفيش Notification يتخلق.
 
 ---
 
@@ -382,9 +537,10 @@ model Notification {
 | Data Point | Storage | Detail |
 |-----------|---------|--------|
 | Status transition | SalesOrderStatusHistory | fromStatus, toStatus, changedBy, createdAt, **ip**, **userAgent** |
-| Delivery record | SalesDelivery + SalesDeliveryItem | deliveredBy, deliveredAt, quantity لكل item |
-| Approval record | SalesOrder (approvedAt, approvedBy) + SalesOrderStatusHistory | مين اعتمد وإمتى |
-| Product snapshot | SalesOrderItem (productName, productSku, unit) | القيمة وقت الطلب (مش بتتغير بعدين) |
+| State snapshot | SalesOrderStatusHistory.beforeState / afterState | JSON كامل للطلب قبل وبعد — مقارنة دقيقة |
+| Delivery record | SalesDelivery + SalesDeliveryItem | deliveredBy, driverName, vehicle, proofImage, signature, gpsLocation, quantity لكل item |
+| Approval record | SalesOrder (approvalStatus, approvedAt, approvedBy, rejectionNote) + SalesOrderStatusHistory | مين اعتمد/رفض وإمتى وليه |
+| Product snapshot | SalesOrderItem (productName, productSku, barcode, category, brand, unit) | القيمة وقت الطلب (مش بتتغير بعدين) |
 
 **ممنوع حذف أي من هذه السجلات** — حتى soft delete. هي Append-Only.
 
@@ -395,28 +551,34 @@ model Notification {
 | Rule | Detail | Enforcement |
 |------|--------|------------|
 | Partial Delivery | كل item عنده deliveredQty منفصلة — لو مش كل items اكتملت → `partially_delivered` | Backend transition logic |
-| Order Expiry | Draft/Confirmed orders with `expiresAt < NOW()` → auto-cancel | Before every transition |
-| Approval Threshold | `grandTotal > 5000 EGP` → needs `approve` before `deliver` لغير Owner | Middleware في route deliver |
-| Reserved Stock | Confirm → `reservedStock += qty`; Deliver → `reservedStock -= deliveredQty`; Cancel → release all | Atomic increment/decrement |
-| Snapshot Frozen | Product name/SKU/unit تُسجل وقت إنشاء الـ order ومبتتغيرش | Written at create time |
-| No Hard Delete | ممنوع DELETE على أي سجل ليه تاريخ حركة | DB-level (relation checks) |
-| Transaction Safety | كل multi-table operation جوه `$transaction` | Code review rule |
+| Order Expiry | Draft/Confirmed orders with `expiresAt < NOW()` → auto-cancel | Daily job OR قبل confirm/process/ship/deliver — **مش قبل GET** |
+| Approval Threshold | `grandTotal > salesApprovalThreshold` (من SystemSettings) → Approval مطلوب | Middleware في route confirm + deliver |
+| Reserved Stock | Confirm → `reservedStock += qty`; Deliver → `reservedStock -= deliveredQty`; Cancel → `reservedStock -= (orderedQty - deliveredQty)` | Atomic increment/decrement |
+| Snapshot Frozen | Product name/SKU/barcode/category/brand/unit تُسجل وقت الإنشاء ومبتتغيرش | Written at create time |
+| Soft Delete Only | ممنوع DELETE على أي سجل ليه تاريخ حركة — Soft Delete (`deletedAt`) فقط | DB-level + route check |
+| Transaction Safety | كل multi-table operation جوه `$transaction` — ودايمًا تتضمن InventoryLog | Code review rule |
 | Notification Consistency | الـ Notifications بتتنشأ جوه نفس transaction بتاعة الحدث | Code review rule |
-| Audit Completeness | كل status transition يسجل IP + User Agent | Middleware |
+| Audit Completeness | كل status transition يسجل IP + User Agent + before/after JSON | Middleware |
+| Cost Price — Moving Average | `costPrice` من moving average لآخر PurchaseOrder معتمد | حساب عند إنشاء الـ Order |
+| No Hard Delete for Orders | ممنوع DELETE على SalesOrder لأي سبب — `isArchived` أو `deletedAt` فقط | Route-level enforcement |
 
 ---
 
 ## Appendix: Implementation Phases
 
-| Phase | Scope | Files |
-|-------|-------|-------|
-| P0 | Design Freeze | هذا المستند |
-| P1 | Schema + Migration | `schema.prisma`, `prisma/migrations/` |
-| P2 | Permissions + Seed | `permissions.ts`, `seed.ts` |
-| P3 | Backend | `sales-orders.ts`, `notifications.ts` |
-| P4 | Frontend API | `api.ts` |
-| P5 | UI | `SalesOrdersPage.tsx`, `App.tsx`, `Layout.tsx` |
-| P6 | Dashboard + Docs + Tests + Report | `DashboardPage.tsx`, locales, tests, executive report |
+| Phase | Scope | Files | Tests |
+|-------|-------|-------|-------|
+| P0 | Design Freeze | هذا المستند | — |
+| P1 | Schema + Migration | `schema.prisma`, `prisma/migrations/` | — |
+| P2 | Regression Tests (Schema) | `tests/schema/` | ✅ تأكيد إن الـ migration صح |
+| P3 | Permissions + Seed | `permissions.ts`, `seed.ts` | ✅ تأكيد إن Owner لسه عنده صلاحياته |
+| P4 | Backend | `sales-orders.ts`, `notifications.ts`, routes | ✅ Backend Integration Tests |
+| P5 | Backend Tests | `tests/sales-orders/` | ✅ Positive + Negative لكل endpoint |
+| P6 | Frontend API | `api.ts` | — |
+| P7 | Frontend | `SalesOrdersPage.tsx`, `App.tsx`, `Layout.tsx` | — |
+| P8 | Dashboard | `DashboardPage.tsx`, locales (`ar.ts`, `en.ts`) | — |
+| P9 | Documentation | README, API docs, permissions doc | ✅ توثيق كامل |
+| P10 | Executive Report | `docs/reports/YYYY-MM-DD-sales-orders-v2.html` | ✅ تقرير تنفيذي للمدير |
 
 ---
 
