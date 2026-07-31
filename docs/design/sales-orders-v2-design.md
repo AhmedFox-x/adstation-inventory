@@ -33,27 +33,30 @@
 | Confirm | Manager | يتحقق من توفر المخزون → يحجز الكمية (`reservedStock += qty`). الحالة: `confirmed`. لو total > threshold → تنشأ Notification للمالك |
 | Process | Manager | تحضير الطلب للتوصيل. الحالة: `processing` |
 | Ship | Manager | شحن الطلب. الحالة: `shipped` |
-| Approve | Owner | اعتماد طلب كبير. الحالة: `approvalStatus = approved` |
-| Reject | Owner | رفض طلب كبير مع سبب. الحالة: `approvalStatus = rejected` |
+| Approve | Owner | اعتماد طلب كبير. `SalesOrderApproval(status=approved)` |
+| Reject | Owner | رفض طلب كبير مع سبب. `SalesOrderApproval(status=rejected, reason)` |
 | Deliver | Manager/Owner | يسلم الكميات الفعلية → ينقص `reservedStock` + `stock`. الحالة: `delivered` أو `partially_delivered` |
 | Close | Manager | إغلاق الطلب نهائيًا. الحالة: `closed` |
 | Cancel | Manager | إلغاء الطلب ← يرجع `reservedStock`. الحالة: `cancelled` |
 
 ### 1.3 Approval Gate
 
-حد الاعتماد (threshold) مخزّن في **جدول إعدادات منفصل (`SystemSettings`)** مش hardcoded.
-الحقل: `salesApprovalThreshold`, القيمة الافتراضية: `5000` (بالجنيه).
+حد الاعتماد مخزّن في **جدول إعدادات منفصل (`SystemSettings`)**:
+- `approvalThresholdValue` — القيمة (افتراضي: `5000`)
+- `approvalThresholdCurrency` — العملة (افتراضي: `EGP`)
+
+**كل Approval هو Entity مستقل (`SalesOrderApproval`)** — مش مجرد حقول على الـ Order.
 
 **الـ Approval هو Gate قبل Confirm، مش شرط قبل Deliver:**
 
 | السيناريو | اللي بيحصل |
 |-----------|-----------|
 | `grandTotal ≤ threshold` | Confirm عادي → `status = confirmed` + Reserve تلقائي |
-| `grandTotal > threshold` | محاولة Confirm → `approvalStatus = pending` + Notification للمالك. **الـ Status يفضل `draft`**. **مفيش Reserve** |
-| Owner → Approve | `status = confirmed` + `approvalStatus = approved` + Reserve تلقائي. Notification للمنشئ |
-| Owner → Reject | `approvalStatus = rejected` + `rejectionNote`. Notification للمنشئ. الطلب يفضل `draft` — يقدر المنشئ يعدل الكميات ويحاول تاني |
+| `grandTotal > threshold` | محاولة Confirm → `SalesOrderApproval(status=pending)` + Notification للمالك. **الـ Status يفضل `draft`**. **مفيش Reserve** |
+| Owner → Approve | `SalesOrderApproval(status=approved)` + `status = confirmed` + Reserve تلقائي. Notification للمنشئ |
+| Owner → Reject | `SalesOrderApproval(status=rejected, reason)` + Notification للمنشئ. الطلب يفضل `draft` — يقدر المنشئ يعدل الكميات ويحاول تاني |
 
-**ليه كده؟** عشان ميحصلش Reserve لطلبات لسه مرفوضة. المخزون بيتحجز بس بعد الموافقة.
+**ليه Entity مستقل؟** عشان بعد سنة ممكن نضيف موافقة المدير المالي أو الإدارة من غير ما نكسر الـ Schema — كل مستوى Approval هيكون سجل جديد في نفس الجدول.
 
 صاحب الشركة يقدر يغير الـ threshold من غير ما يحتاج deploy.
 
@@ -101,7 +104,7 @@
 
 | From | To | Requires | Notes |
 |------|----|----------|-------|
-| draft | confirmed | Stock check + Approval check | لو فوق threshold: Confirm يفضل draft مع approvalStatus=pending. Confirm الفعلي بيحصل بس بعد Approve |
+| draft | confirmed | Stock check + Approval check | لو فوق threshold: Confirm يفضل draft مع SalesOrderApproval(pending). Confirm الفعلي بيحصل بس بعد Approve |
 | draft | cancelled | — | Only if no items delivered |
 | confirmed | processing | — | |
 | confirmed | cancelled | — | Releases reservedStock بالكامل |
@@ -115,6 +118,27 @@
 | delivered | closed | — | Final state |
 | cancelled | *none* | — | Terminal state |
 | closed | *none* | — | Terminal state |
+
+### 2.4 Status Machine Locked (Service Layer)
+
+**ممنوع نهائيًا أي Route يغيّر `status` مباشرة.** كل التحويلات بتمر من Service واحدة:
+
+```
+src/services/salesOrderService.ts
+  └── transitionToConfirmed(id, user, tx)    // كل الـ validation جوه
+  └── transitionToProcessing(id, user, tx)
+  └── transitionToShipped(id, user, tx)
+  └── transitionToDelivered(id, user, tx, deliveredItems)
+  └── transitionToClosed(id, user, tx)
+  └── transitionToCancelled(id, user, tx)
+  └── approve(id, user, tx)
+  └── reject(id, user, tx, reason)
+```
+
+- الـ Routes بتنادي الـ Service فقط
+- كل الـ Validations (status machine, permission, stock check, approval check) جوه الـ Service
+- مستحيل حد يكتب `data: { status: "processing" }` في أي Route
+- الـ Service بيستخدم `version` (Optimistic Locking) للتحكم في الـ Concurrency (نقطة 15)
 
 ### 2.3 Expiry Rule
 
@@ -152,36 +176,63 @@ model Product {
 model Reservation {
   // الحقول الموجودة ...
   salesOrderItemId String?                 // ➕ جديد — ربط الـ Reservation بـ item معين في الطلب (مش الطلب كله)
+  warehouseId      String?                 // ➕ جديد — جاهز لـ Multi-Warehouse مستقبلًا
   fulfilledQty     Int     @default(0)    // ➕ جديد — الكمية اللي اتنفذت فعليًا من الحجز ده
 }
 
-// ===== SalesOrderItem تعديل =====
+// ===== SalesOrderItem تعديل — Snapshot كامل =====
 model SalesOrderItem {
   // الحقول الموجودة ...
-  productName  String?                    // ➕ Snapshot
-  productSku   String?                    // ➕ Snapshot
-  unit         String?                    // ➕ Snapshot
-  barcode      String?                    // ➕ Snapshot
-  category     String?                    // ➕ Snapshot
-  brand        String?                    // ➕ Snapshot
+  productName    String?    // ➕ Snapshot
+  productSku     String?    // ➕ Snapshot
+  unit           String?    // ➕ Snapshot
+  barcode        String?    // ➕ Snapshot
+  category       String?    // ➕ Snapshot
+  brand          String?    // ➕ Snapshot
+  costPrice      Float?     // Moving Average — Snapshot عند Confirm/Approve
+  sellingPrice   Float?     // سعر البيع المجمد
+  taxRate        Float?    @default(0)   // ➕ سعر الضريبة المجمد (لو اتغير بعدين)
+  discountRate   Float?    @default(0)   // ➕ نسبة الخصم المجمدة
+  currency       String?   @default("EGP") // ➕ العملة المجمدة
+  exchangeRate   Float?    @default(1)   // ➕ سعر الصرف المجمد
 }
 
 // ===== SalesOrder تعديل =====
 model SalesOrder {
   // الحقول الموجودة ...
-  approvalStatus String @default("none")  // ➕ جديد: none | pending | approved | rejected
-  approvedAt     DateTime?
-  approvedBy     String?
-  rejectionNote  String?                  // ➕ جديد — سبب الرفض
+  version        Int      @default(1)    // ➕ Optimistic Locking — بيعلى كل update
+  deletedAt      DateTime?               // ➕ Soft Delete
+  deletedBy      String?                 // ➕ مين عمل soft delete
+
+  approvals      SalesOrderApproval[]    // ➕ entity مستقل للـ approvals
+}
+
+// ===== كيان جديد: Approval مستقل =====
+model SalesOrderApproval {
+  id           String   @id @default(cuid())
+  salesOrderId String
+  status       String   // pending | approved | rejected
+  requestedBy  String?  // اللي طلب الاعتماد
+  approvedBy   String?  // اللي اعتمد
+  rejectedBy   String?  // اللي رفض
+  reason       String?  // سبب الرفض/الاعتماد
+  createdAt    DateTime @default(now())
+  approvedAt   DateTime?
+  rejectedAt   DateTime?
+
+  salesOrder SalesOrder @relation(fields: [salesOrderId], references: [id], onDelete: Cascade)
+
+  @@index([salesOrderId, status])
 }
 
 // ===== SalesOrderStatusHistory تعديل =====
 model SalesOrderStatusHistory {
   // الحقول الموجودة ...
-  ip        String?                       // ➕ جديد
-  userAgent String?                       // ➕ جديد
-  beforeState Json?                       // ➕ جديد — Snapshot JSON للحالة قبل التغيير
-  afterState  Json?                       // ➕ جديد — Snapshot JSON للحالة بعد التغيير
+  ip            String?                    // ➕ جديد
+  userAgent     String?                    // ➕ جديد
+  beforeState   Json?                      // ➕ جديد — Snapshot JSON للحالة قبل التغيير
+  afterState    Json?                      // ➕ جديد — Snapshot JSON للحالة بعد التغيير
+  changedFields String[]?                  // ➕ جديد — مثال: ["status", "approvedBy"] — قراءة أسهل
 }
 
 // ===== نماذج جديدة =====
@@ -224,30 +275,53 @@ model Notification {
   type            String    // low_stock | order_confirmed | order_delivered | order_expired | approval_needed | order_approved | order_rejected
   title           String
   message         String
-  referenceType   String?   // sales_order | purchase_order | product
+  entityType      String?   // ➕ sales_order | purchase_order | product | delivery — الـ Frontend بيستخدمها للتنقل الذكي
+  entityId        String?   // ➕ id الكيان
+  referenceType   String?   // sales_order | purchase_order | product (backward compat)
   referenceId     String?
   priority        String    @default("normal")  // low | normal | high | urgent
   icon            String?                       // اسم الأيقونة (lucide)
-  actionUrl       String?                       // رابط مباشة للصفحة المعنية
+  actionUrl       String?                       // اختياري — لو entityType مش كفاية
   createdBySystem Boolean   @default(false)
   isRead          Boolean   @default(false)
   readAt          DateTime?
   deletedAt       DateTime?
   createdAt       DateTime  @default(now())
+
+  @@index([userId, isRead, createdAt])
 }
 
-// ===== Indexes إضافية =====
+// ===== InventoryLog: type يبقى Enum بدل String =====
+enum InventoryLogType {
+  SALES_ORDER
+  PURCHASE_ORDER
+  WITHDRAWAL
+  SUPPLY
+  STOCKTAKE
+  ADJUSTMENT
+  RETURN
+  RESERVATION
+  RELEASE
+  SYSTEM
+}
+
+model InventoryLog {
+  // الحقول الموجودة ...
+  type          InventoryLogType   // ➕ Enum مش String
+  // باقي الحقول زي ما هي ...
+}
+
+// ===== Indexes إضافية — مركبة (Composite) =====
 // SalesOrder: @@index([orderNumber])
-// SalesOrder: @@index([status])
-// SalesOrder: @@index([clientId])
+// SalesOrder: @@index([status, createdAt])          // ➕ مركب — للـ filters الشائعة
+// SalesOrder: @@index([clientId, createdAt])        // ➕ مركب — تقارير العميل
 // SalesOrder: @@index([expectedDeliveryDate])
-// SalesOrder: @@index([createdAt])
-// SalesOrder: @@index([approvalStatus])
 // SalesOrderItem: @@index([productId])
 // SalesOrderStatusHistory: @@index([orderId, createdAt])
 // SalesDelivery: @@index([salesOrderId])
 // SalesDelivery: @@index([deliveredAt])
 // Notification: @@index([userId, isRead, createdAt])
+// SalesOrderApproval: @@index([salesOrderId, status])
 ```
 
 ### 3.2 Product Snapshot Detail
@@ -262,22 +336,29 @@ model Notification {
 
 ده عشان لو العميل غير بيانات المنتج بعدين، الـ Order القديم يفضل شايف القيمة اللي كانت وقت الطلب.
 
-### 3.3 Cost Price — Moving Average
+### 3.3 Price Freeze — Moving Average (تكلفة) + سعر بيع + ضريبة + عملة
 
-سعر التكلفة في `SalesOrderItem.costPrice` بيتحسب كـ **Moving Average**:
+**التجميد الكامل للسعر وقت اعتماد الطلب:**
 
+| الحقل | المصدر | التوقيت |
+|-------|--------|---------|
+| `costPrice` | Moving Average (آخر PurchaseOrder معتمد) | Confirm (أقل من threshold) أو Approve (فوق threshold) |
+| `sellingPrice` | اللي دخلته وقت الإنشاء | Confirm/Approve |
+| `taxRate` | الـ Product وقتها | Confirm/Approve |
+| `discountRate` | نسبة الخصم وقتها | Confirm/Approve |
+| `currency` | العملة وقتها (افتراضي EGP) | Confirm/Approve |
+| `exchangeRate` | سعر الصرف وقتها (افتراضي 1) | Confirm/Approve |
+
+**Cost Price — Moving Average:**
 ```
 movingAvgCost = totalCostOfAllPurchases / totalQuantityPurchased
 ```
 
-التفاصيل:
 - المصدر: `PurchaseOrderItem` حيث `PurchaseOrder.status === "received"`
 - كل ما يدخل أمر شراء جديد معتمد، يتحدّث الـ Moving Average
-- وقت **Confirm أو Approve** (مش وقت الإنشاء)، بنسجل قيمة `movingAvgCost` الحالية في `costPrice`
-  - لو الطلب أقل من threshold: Snapshot أخذ عند Confirm
-  - لو الطلب فوق threshold: Snapshot أخذ عند Approve
-- **ليه مش وقت الإنشاء أو التوصيل؟** لأن متوسط التكلفة ممكن يتغير بين اليومين، ونفسر我们把 القيمة وقت اعتماد الطلب مش وقت التوصيل
+- **ليه مش وقت الإنشاء أو التوصيل؟** لأن متوسط التكلفة ممكن يتغير بين اليومين — فبنجمد القيمة وقت اعتماد الطلب (Confirm أو Approve)
 - لو مفيش مشتريات خالص للمنتج: `costPrice = 0` (أو يقدر المستخدم يدخله يدويًا)
+- **ليه كل الحقول دي؟** لو الضريبة اتغيرت بعد سنتين، الفاتورة القديمة تفضل صحيحة — الأرقام مجمدة في الـ Order
 
 ### 3.4 Partial Delivery — Reservation Tracking
 
@@ -290,19 +371,22 @@ movingAvgCost = totalCostOfAllPurchases / totalQuantityPurchased
 - Cancel بعد Partial: `reservedStock -= (orderedQty - deliveredQty)` — مش `orderedQty`
 - ده بيسمح بتتبع دقيق: أي reservation اتنفذ قد إيه، وأي جزء لسه متبقي
 
-### 3.5 Approval Status
+### 3.5 Approval Entity
 
-- `approvalStatus` بقيمة: `none` (مافيش approval مطلوب) | `pending` | `approved` | `rejected`
-- القيمة الافتراضية: `none`
-- لو `grandTotal > threshold` عند Confirm: `approvalStatus = pending`
-- الـ Owner يعمل `approve` → `approvalStatus = approved`, `approvedAt`, `approvedBy`
-- الـ Owner يعمل `reject` → `approvalStatus = rejected`, `rejectionNote`
-- الـ Manager مش قادر يعدل approvalStatus خالص (صلاحية `approve` لـ Owner بس)
+- كل طلب محتاج اعتماد بيدخل سجل جديد في `SalesOrderApproval`
+- القيم: `status = pending` | `approved` | `rejected`
+- لو `grandTotal > threshold` عند Confirm: بيتخلق `SalesOrderApproval(pending)`
+- الـ Owner يعمل `approve` → `SalesOrderApproval(status=approved, approvedBy, approvedAt)` + Confirm الفعلي + Reserve
+- الـ Owner يعمل `reject` → `SalesOrderApproval(status=rejected, rejectedBy, rejectedAt, reason)`
+- لو الطلب اتعدل واتحاول Confirm تاني → Approval جديد (تاريخ كامل لكل محاولة)
+- الـ Manager مش قادر يعدل الـ Approvals خالص (صلاحية `approve`/`reject` لـ Owner بس)
+- قابل للتوسع مستقبلًا: موافقة مدير مالي، موافقة إدارة — من غير ما نكسر الـ Schema
 
 ### 3.6 Audit Snapshots
 
 - `SalesOrderStatusHistory.beforeState`: JSON للـ Order كامل قبل الـ transition
 - `SalesOrderStatusHistory.afterState`: JSON للـ Order كامل بعد الـ transition
+- `SalesOrderStatusHistory.changedFields`: `["status", "approvedBy"]` — القراءة السريعة
 - بيسمح بعمل مقارنة دقيقة: إيه اللي اتغير بالظبط
 
 ### 3.8 Schema Tests (Phase 2)
@@ -312,21 +396,28 @@ movingAvgCost = totalCostOfAllPurchases / totalQuantityPurchased
 | Test | What it verifies |
 |------|-----------------|
 | Migration Up | إن الـ migration الجديد يشتغل من غير أخطار على Database فاضية |
-| Foreign Keys | `SalesOrder.clientId → Client.id`، `SalesOrderItem.productId → Product.id`، `SalesDelivery.salesOrderId → SalesOrder.id`، إلخ |
+| Foreign Keys | `SalesOrder.clientId → Client.id`، `SalesOrderItem.productId → Product.id`، `SalesDelivery.salesOrderId → SalesOrder.id`، `SalesOrderApproval.salesOrderId → SalesOrder.id` |
 | Unique Constraints | `SalesOrder.orderNumber`، `SalesDelivery.deliveryNumber` |
-| Indexes | إن الـ indexes المطلوبة اتعملت (خصوصًا `@@index([status])`، `@@index([clientId])`، `@@index([createdAt])`) |
-| Default Values | `SalesOrder.status = "draft"`، `SalesOrder.approvalStatus = "none"`، `Product.unit = "قطعة"`، `Notification.priority = "normal"` |
+| Indexes | Composite indexes: `(status, createdAt)`، `(clientId, createdAt)`، `(orderNumber)` |
+| Default Values | `SalesOrder.status = "draft"`، `SalesOrder.version = 1`، `Product.unit = "قطعة"`، `Notification.priority = "normal"` |
 | Required Fields | إن `clientId` و `items` مطلوبين في `SalesOrder` |
 | Cascade Delete | `SalesOrderItem` يتحدف لما `SalesOrder` يتحدف (onDelete: Cascade) |
+| Soft Delete | `deletedAt` + `deletedBy` موجودين، ومفيش `isDeleted` خالص |
 
 **الهدف:** التأكد إن الـ Schema نفسه صحيح قبل ما نكتب أي business logic فوقيه.
 
 ### 3.9 Order Number Format
 
+**Sales Orders:**
 - الصيغة: `SO-YYYYMM-NNNNNN`
 - مثال: `SO-202607-000001`
 - الترقيم شهري (يعيد من 1 كل شهر جديد)
 - يتحقق من uniqueness في نطاق الشهر (يجيب آخر رقم في الشهر الحالي ويزيد 1)
+
+**Deliveries:**
+- الصيغة: `SD-YYYYMM-NNNNNN`
+- مثال: `SD-202607-000001`
+- نفس منطق الترقيم الشهري
 
 ---
 
@@ -360,12 +451,12 @@ movingAvgCost = totalCostOfAllPurchases / totalQuantityPurchased
 
 فى الـ Backend:
 - قبل `confirm`:
-  - لو `grandTotal ≤ salesApprovalThreshold` (من `SystemSettings`) → Confirm عادي: `status = confirmed`, Reserve
-  - لو `grandTotal > salesApprovalThreshold` → `approvalStatus = pending`, `status` يفضل `draft`, Notification للمالك. **مفيش Reserve**
-- الـ `approve`: Owner بس. بيحول `status = confirmed` ويعمل Reserve ويسجل costPrice Snapshot
-- الـ `reject`: Owner بس. `approvalStatus = rejected`, `rejectionNote`, Notification للمنشئ
-- لو `approvalStatus === "rejected"` → ممنوع الـ Confirm. يقدر المنشئ يعدل الطلب ويعمل Confirm تاني
-- قبل `deliver`: لو `approvalStatus === "pending"` → 403 لأي دور
+  - لو `grandTotal ≤ approvalThresholdValue` (من `SystemSettings`, بالعملة `approvalThresholdCurrency`) → Confirm عادي: `status = confirmed`, Reserve
+  - لو `grandTotal > approvalThresholdValue` → `SalesOrderApproval(status=pending)`, `status` يفضل `draft`, Notification للمالك. **مفيش Reserve**
+- الـ `approve`: Owner بس. بيحول `status = confirmed` ويعمل Reserve ويسجل costPrice Snapshot + بيقفل الـ `SalesOrderApproval(status=approved)`
+- الـ `reject`: Owner بس. `SalesOrderApproval(status=rejected, reason)`, Notification للمنشئ
+- لو في Approval مرفوض → ممنوع الـ Confirm. يقدر المنشئ يعدل الطلب ويعمل Confirm تاني (بيتخلق Approval جديد)
+- قبل `deliver`: لو في Approval pending نشط → 403 لأي دور
 
 ---
 
@@ -383,8 +474,8 @@ movingAvgCost = totalCostOfAllPurchases / totalQuantityPurchased
 | POST | `/api/sales-orders/:id/process` | process | P4 | |
 | POST | `/api/sales-orders/:id/ship` | ship | P4 | |
 | POST | `/api/sales-orders/:id/deliver` | deliver | P4 | Body: deliveredItems[{itemId, deliveredQty}]; checks approval |
-| POST | `/api/sales-orders/:id/approve` | approve | P4 | Body: { note? }; sets approvalStatus=approved |
-| POST | `/api/sales-orders/:id/reject` | reject | P4 | Body: { reason }; sets approvalStatus=rejected |
+| POST | `/api/sales-orders/:id/approve` | approve | P4 | Body: { note? }; ينشئ SalesOrderApproval(status=approved) + Confirm |
+| POST | `/api/sales-orders/:id/reject` | reject | P4 | Body: { reason }; ينشئ SalesOrderApproval(status=rejected) |
 | POST | `/api/sales-orders/:id/close` | close | P4 | |
 | POST | `/api/sales-orders/:id/cancel` | cancel | P4 | Releases reservedStock |
 | GET | `/api/sales-orders/:id/deliveries` | view | P4 | History of all deliveries |
@@ -417,7 +508,7 @@ movingAvgCost = totalCostOfAllPurchases / totalQuantityPurchased
   id: string;
   orderNumber: string;           // SO-202607-000001
   status: "draft";
-  approvalStatus: "none";
+  version: 1;                    // Optimistic Locking — بيرجع لكل الـ POST
   client: { id: string; name: string };
   items: Array<{
     id: string;
@@ -429,15 +520,22 @@ movingAvgCost = totalCostOfAllPurchases / totalQuantityPurchased
     brand: string;
     unit: string;
     orderedQty: number;
-    sellingPrice: number;
-    costPrice: number;            // Moving Average
+    sellingPrice: number;        // مجمد
+    costPrice: number;           // Moving Average — مجمد عند Confirm/Approve
+    taxRate: number;             // مجمد
+    discountRate: number;        // مجمد
+    currency: string;            // مجمد
+    exchangeRate: number;        // مجمد
     totalPrice: number;
   }>;
   subtotal: number;
   grandTotal: number;
+  updatedAt: string;             // آخر تحديث
   statusHistory: Array<{ toStatus: string; createdAt: string }>;
 }
 ```
+
+**قاعدة:** كل POST بيستجيب بـ `{ id, status, version, updatedAt }` كحد أدنى — عشان الـ Frontend يعمل Refresh ذكي من غير ما يسأل الـ API تاني.
 
 #### POST /api/sales-orders/:id/deliver
 
@@ -466,9 +564,9 @@ movingAvgCost = totalCostOfAllPurchases / totalQuantityPurchased
 {
   id: string;
   status: string;
-  approvalStatus: "approved";
-  approvedAt: string;
-  approvedBy: string;
+  version: number;
+  approvals: Array<{ id: string; status: "approved"; approvedBy: string; approvedAt: string; reason: string }>;
+  updatedAt: string;
 }
 ```
 
@@ -484,8 +582,9 @@ movingAvgCost = totalCostOfAllPurchases / totalQuantityPurchased
 {
   id: string;
   status: string;
-  approvalStatus: "rejected";
-  rejectionNote: string;
+  version: number;
+  approvals: Array<{ id: string; status: "rejected"; rejectedBy: string; rejectedAt: string; reason: string }>;
+  updatedAt: string;
 }
 ```
 
@@ -506,8 +605,15 @@ movingAvgCost = totalCostOfAllPurchases / totalQuantityPurchased
     total: number;
     totalPages: number;
   };
+  cursor?: string;   // ➕ Cursor للتارجت السريع على نطاق كبير
 }
 ```
+
+**Cursor Pagination (جاهز لمستقبل كبير):**
+- الوضع الحالي: Offset (`page`/`limit`) — كفاية لحد 100 ألف سجل
+- الاستعداد: إضافة `cursor` param في الاستعلام — يجيب السجلات بعد الـ cursor مباشرة
+- يستخدم `orderBy: { id: 'asc' }` مع `where: { id: { gt: cursor } }`
+- جاهز للتفعيل وقت ما الحجم يكبر — مش محتاج Breaking Change في الـ API
 
 ---
 
@@ -516,16 +622,44 @@ movingAvgCost = totalCostOfAllPurchases / totalQuantityPurchased
 | Operation | Tables affected | Transaction | Rollback behavior |
 |-----------|---------------|------------|-------------------|
 | Confirm (≤ threshold) | SalesOrder (status) + SalesOrderStatusHistory + Product (reservedStock) + Reservation + costPrice Snapshot + Notification + InventoryLog | ✅ `$transaction` | لو فشل الـ reservedStock أو الـ Notification، ميحصلش transition |
-| Approve (was pending) | SalesOrder (status → confirmed + approvalStatus) + SalesOrderStatusHistory + Product (reservedStock) + Reservation + costPrice Snapshot + Notification + InventoryLog | ✅ `$transaction` | زي Confirm بالظبط — الـ Reserve بيتعمل هنا مش في Confirm |
-| Pending Confirm (> threshold) | SalesOrder (approvalStatus → pending) + SalesOrderStatusHistory + Notification | ✅ `$transaction` | مفيش Reserve لسه — مجرد إشعار |
+| Approve (was pending) | SalesOrder (status → confirmed) + SalesOrderApproval (status → approved) + SalesOrderStatusHistory + Product (reservedStock) + Reservation + costPrice Snapshot + Notification + InventoryLog | ✅ `$transaction` | زي Confirm بالظبط — الـ Reserve بيتعمل هنا مش في Confirm |
+| Pending Confirm (> threshold) | SalesOrderApproval (create pending) + SalesOrderStatusHistory + Notification | ✅ `$transaction` | مفيش Reserve لسه — مجرد إشعار |
 | Deliver | SalesOrder (status) + SalesOrderStatusHistory + SalesDelivery + SalesDeliveryItem + SalesOrderItem (deliveredQty) + Reservation (fulfilledQty, status) + Product (stock + reservedStock) + InventoryLog | ✅ `$transaction` | لو أي item فشل، الكل يرجع. الـ Reservation يفضل Active لو باقي remaining |
 | Cancel (confirmed+) | SalesOrder (status) + SalesOrderStatusHistory + Reservation (status → cancelled) + Product (reservedStock) + InventoryLog | ✅ `$transaction` | لو فشل تحرير المخزون، ميحصلش transition |
-| Cancel (draft/pending) | SalesOrder (status) + SalesOrderStatusHistory | ❌ مفيش Reserve | مجرد تغيير status |
-| Approve | SalesOrder (approvalStatus + approvedAt + approvedBy) + SalesOrderStatusHistory + Notification | ✅ `$transaction` | كامل |
-| Reject | SalesOrder (approvalStatus + rejectionNote) + SalesOrderStatusHistory + Notification | ✅ `$transaction` | كامل |
-| Create | SalesOrder + SalesOrderItem (snapshot) + SalesOrderStatusHistory + (Reservation لو auto-reserve?) | ❌ عملية واحدة | Create نفسه atomic |
+| Cancel (draft/pending) | SalesOrder (status) + SalesOrderStatusHistory + SalesOrderApproval (status → cancelled if pending) | ✅ `$transaction` | مجرد تغيير status |
+| Reject | SalesOrderApproval (status → rejected) + SalesOrderStatusHistory + Notification | ✅ `$transaction` | كامل |
+| Create | SalesOrder + SalesOrderItem (snapshot) + SalesOrderStatusHistory | ❌ عملية واحدة | Create نفسه atomic |
 
 **قاعدة:** كل عملية بتغير أكتر من جدول — ومن ضمنها دايمًا **`InventoryLog`** — لازم تكون جوه `$transaction` مع rollback عند الفشل.
+
+### 6.1 Concurrency (Race Condition Protection) — ⚠️ الأهم
+
+**المشكلة:** لو اتنين ضغطوا Confirm في نفس اللحظة → Double Reserve.
+
+**الحل المزدوج:**
+
+1. **Optimistic Locking (`version` field):**
+   - `SalesOrder.version` بيعلى بـ +1 مع كل update
+   - أي update بيشمل `WHERE version = :currentVersion`
+   - لو النسخة غير متطابقة → `409 Conflict` → الـ Frontend يعمل Refresh
+
+2. **Row Lock جوه الـ Transaction:**
+   - وقت الـ Confirm/Approve، نقفل صفوف الـ `Product` المرتبطة بـ `SELECT ... FOR UPDATE`
+   - الـ Prisma بيدعم ده عبر `$queryRaw` أو `SELECT ... FOR UPDATE` مع Isolation Level
+   - الاتنين Confirm بيوصلوا في نفس اللحظة → الأول يكسب، التاني يستنى ويلاقي المخزون اتخصم → يرفض بـ 409
+
+**مثال (Prisma):**
+```typescript
+const result = await prisma.$transaction(async (tx) => {
+  // قفل صفوف المنتجات
+  const products = await tx.$queryRaw`SELECT * FROM "Product" WHERE id IN (${ids}) FOR UPDATE`;
+  // فحص المخزون
+  // Update reservedStock
+  // Update SalesOrder WHERE version = :currentVersion
+}, { isolationLevel: 'ReadCommitted' });
+```
+
+**الـ GET مش بيقفل حاجة** — القفل بس على الـ write operations.
 
 ### InventoryLog في العمليات
 
@@ -547,7 +681,7 @@ movingAvgCost = totalCostOfAllPurchases / totalQuantityPurchased
 | إجمالي مبيعات الشهر | SalesOrder | P8 | `SUM(grandTotal) WHERE status IN ('delivered','closed') AND orderDate >= startOfMonth` |
 | إجمالي الربح الشهري (Gross Profit) | SalesOrderItem | P8 | `SUM((sellingPrice - costPrice) * deliveredQty) WHERE order.status IN ('delivered','closed') AND order.orderDate >= startOfMonth` |
 | الطلبات المتأخرة (overdue) | SalesOrder | P8 | `COUNT(*) WHERE expectedDeliveryDate < NOW() AND status NOT IN ('delivered','closed','cancelled')` |
-| طلبات في انتظار الاعتماد | SalesOrder | P8 | `COUNT(*) WHERE approvalStatus = 'pending'` |
+| طلبات في انتظار الاعتماد | SalesOrderApproval | P8 | `COUNT(DISTINCT salesOrderId) WHERE status = 'pending'` |
 | أفضل 5 عملاء مبيعات (شهري) | SalesOrder + Client | P8 | `GROUP BY clientId ORDER BY SUM(grandTotal) DESC LIMIT 5` |
 | آخر 10 طلبات | SalesOrder | P8 | `ORDER BY createdAt DESC LIMIT 10` |
 
@@ -565,6 +699,12 @@ movingAvgCost = totalCostOfAllPurchases / totalQuantityPurchased
 | `approval_needed` | Confirm where > threshold | "الطلب {orderNumber} من {clientName} يحتاج اعتماد (قيمته {grandTotal} ج.م)" | Owner | high |
 | `low_stock` | Deliver where stock ≤ minStock | "المخزون من {productName} وصل {stock} (الحد الأدنى: {minStock})" | Manager + Owner | urgent |
 
+كل Notification فيها:
+- `entityType` + `entityId` — عشان الـ Frontend يعرف يفتح أي صفحة بنفسه (لو الـ URL اتغير مفيش مشكلة)
+- `actionUrl` — اختياري كاختصار بس، مش الأساس
+- `priority` — للترتيب في الـ Notification Center
+- `createdBySystem` — للتفريق بين إشعارات النظام والإشعارات المرتبطة بمستخدم
+
 كل Notification بتتنشأ جوه نفس `$transaction` بتاعة العملية الأصلية — لو فشلت العملية، مفيش Notification يتخلق.
 
 ---
@@ -575,9 +715,10 @@ movingAvgCost = totalCostOfAllPurchases / totalQuantityPurchased
 |-----------|---------|--------|
 | Status transition | SalesOrderStatusHistory | fromStatus, toStatus, changedBy, createdAt, **ip**, **userAgent** |
 | State snapshot | SalesOrderStatusHistory.beforeState / afterState | JSON كامل للطلب قبل وبعد — مقارنة دقيقة |
+| Changed fields | SalesOrderStatusHistory.changedFields | `["status", "approvedBy"]` — قراءة أسرع للـ Audit |
 | Delivery record | SalesDelivery + SalesDeliveryItem | deliveredBy, driverName, vehicle, proofImage, signature, gpsLocation, quantity لكل item |
-| Approval record | SalesOrder (approvalStatus, approvedAt, approvedBy, rejectionNote) + SalesOrderStatusHistory | مين اعتمد/رفض وإمتى وليه |
-| Product snapshot | SalesOrderItem (productName, productSku, barcode, category, brand, unit) | القيمة وقت الطلب (مش بتتغير بعدين) |
+| Approval record | SalesOrderApproval (status, requestedBy, approvedBy, rejectedBy, reason, timestamps) | كل مستوى اعتماد مستقل — قابل للتوسع مستقبلًا |
+| Product snapshot | SalesOrderItem (productName, productSku, barcode, category, brand, unit, costPrice, sellingPrice, taxRate, discountRate, currency, exchangeRate) | السعر والضريبة والعملة بيتجمدوا كاملين وقت الطلب |
 
 **ممنوع حذف أي من هذه السجلات** — حتى soft delete. هي Append-Only.
 
@@ -589,15 +730,18 @@ movingAvgCost = totalCostOfAllPurchases / totalQuantityPurchased
 |------|--------|------------|
 | Partial Delivery | كل item عنده deliveredQty منفصلة — لو مش كل items اكتملت → `partially_delivered` | Backend transition logic |
 | Order Expiry | Draft/Confirmed orders with `expiresAt < NOW()` → auto-cancel | Daily job OR قبل confirm/process/ship/deliver — **مش قبل GET** |
-| Approval Gate Before Reserve | `grandTotal > salesApprovalThreshold` → Confirm بيحط `approvalStatus = pending` بس. Reserve و costPrice Snapshot بيتعملوا بعد Approve فقط | Middleware في route confirm |
-| Reserved Stock | Confirm → `reservedStock += qty`; Deliver → `reservedStock -= deliveredQty`; Cancel → `reservedStock -= (orderedQty - deliveredQty)` | Atomic increment/decrement |
-| Snapshot Frozen | Product name/SKU/barcode/category/brand/unit تُسجل وقت الإنشاء ومبتتغيرش | Written at create time |
-| Soft Delete Only | ممنوع DELETE على أي سجل ليه تاريخ حركة — Soft Delete (`deletedAt`) فقط | DB-level + route check |
+| Approval Gate Before Reserve | `grandTotal > approvalThresholdValue` → Confirm بيتخلق SalesOrderApproval(pending) بس. Reserve و costPrice Snapshot بيتعملوا بعد Approve فقط | Middleware في route confirm |
+| Reserved Stock | Confirm/Approve → `reservedStock += qty`; Deliver → `reservedStock -= deliveredQty`; Cancel → `reservedStock -= (orderedQty - deliveredQty)` | Atomic increment/decrement |
+| Price Freeze | costPrice + sellingPrice + taxRate + discountRate + currency + exchangeRate بيتجمدوا وقت Confirm/Approve ومبتتغيرش | Written at confirm/approve time |
+| Soft Delete Only | ممنوع DELETE على أي سجل ليه تاريخ حركة — Soft Delete بـ `deletedAt` + `deletedBy` فقط (مفيش `isDeleted`) | DB-level + route check |
 | Transaction Safety | كل multi-table operation جوه `$transaction` — ودايمًا تتضمن InventoryLog | Code review rule |
 | Notification Consistency | الـ Notifications بتتنشأ جوه نفس transaction بتاعة الحدث | Code review rule |
-| Audit Completeness | كل status transition يسجل IP + User Agent + before/after JSON | Middleware |
-| Cost Price — Moving Average | `costPrice` من moving average لآخر PurchaseOrder معتمد | Snapshot عند Confirm (أقل من threshold) أو Approve (فوق threshold) — مش وقت الإنشاء |
-| No Hard Delete for Orders | ممنوع DELETE على SalesOrder لأي سبب — `isArchived` أو `deletedAt` فقط | Route-level enforcement |
+| Audit Completeness | كل status transition يسجل IP + User Agent + before/after JSON + changedFields | Middleware |
+| Cost Price — Moving Average | `costPrice` من moving average لآخر PurchaseOrder معتمد | Snapshot عند Confirm أو Approve — مش وقت الإنشاء |
+| No Hard Delete for Orders | ممنوع DELETE على SalesOrder لأي سبب — `deletedAt` فقط | Route-level enforcement |
+| Status Machine Locked | ممنوع أي Route يعدّل status مباشرة — كل التحويلات من Service واحدة | Service layer + code review |
+| Concurrency Safe | Optimistic Locking (`version`) + Row Lock (`FOR UPDATE`) ضد الـ Double Reserve | Transaction isolation |
+| InventoryLog Type Enum | `InventoryLogType` Enum مش String: SALES_ORDER, PURCHASE_ORDER, WITHDRAWAL, RETURN, ADJUSTMENT, ... | Schema level |
 
 ---
 
@@ -609,8 +753,8 @@ movingAvgCost = totalCostOfAllPurchases / totalQuantityPurchased
 | P1 | Schema + Migration + Backup | `schema.prisma`, `prisma/migrations/` | — |
 | P2 | Schema Tests | `tests/schema/` | ✅ Migration Up, Foreign Keys, Unique Constraints, Indexes, Default Values |
 | P3 | Permissions + Seed | `permissions.ts`, `seed.ts` | ✅ تأكيد إن Owner لسه عنده صلاحياته |
-| P4 | Backend | `sales-orders.ts`, `notifications.ts`, routes | ✅ Backend Integration Tests |
-| P5 | Backend Tests | `tests/sales-orders/` | ✅ Positive + Negative لكل endpoint |
+| P4 | Backend | `sales-orders.ts`, `notifications.ts`, `salesOrderService.ts`, routes | ✅ Backend Integration Tests (شاملة Concurrency tests) |
+| P5 | Backend Tests | `tests/sales-orders/` | ✅ Positive + Negative لكل endpoint + Race Condition tests |
 | P6 | Frontend API | `api.ts` | — |
 | P7 | Frontend | `SalesOrdersPage.tsx`, `App.tsx`, `Layout.tsx` | — |
 | P8 | Dashboard | `DashboardPage.tsx`, locales (`ar.ts`, `en.ts`) | — |
