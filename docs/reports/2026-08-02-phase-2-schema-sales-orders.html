@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html dir="rtl" lang="ar">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>تقرير تنفيذي — Phase 2: بنية قاعدة بيانات أوامر البيع (Schema v2)</title>
+<style>
+  :root {
+    --red: #DC2626;
+    --red-dark: #B91C1C;
+    --ink: #0d0a08;
+    --paper: #faf7f4;
+    --card: #ffffff;
+    --muted: #6b6660;
+    --border: #e7e1da;
+    --green: #166534;
+    --green-bg: #f0fdf4;
+    --amber-bg: #fffbeb;
+    --amber: #92400e;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: "Segoe UI", Tahoma, Arial, sans-serif;
+    background: var(--paper);
+    color: var(--ink);
+    line-height: 1.7;
+    padding: 40px 16px;
+  }
+  .wrap { max-width: 900px; margin: 0 auto; }
+  header {
+    background: linear-gradient(135deg, var(--ink) 0%, #1a1410 100%);
+    color: #fff;
+    border-radius: 16px;
+    padding: 36px 40px;
+    margin-bottom: 28px;
+  }
+  header .tag {
+    display: inline-block;
+    background: var(--red);
+    color: #fff;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    padding: 4px 12px;
+    border-radius: 999px;
+    margin-bottom: 14px;
+  }
+  header h1 { font-size: 26px; margin-bottom: 8px; }
+  header p { color: #d8d2cb; font-size: 15px; }
+  .meta { display: flex; gap: 24px; flex-wrap: wrap; margin-top: 18px; }
+  .meta div { font-size: 13px; color: #b8b0a7; }
+  .meta b { color: #fff; }
+  h2 {
+    font-size: 20px;
+    margin: 32px 0 14px;
+    padding-right: 12px;
+    border-right: 4px solid var(--red);
+  }
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 22px 26px;
+    margin-bottom: 16px;
+  }
+  .exec { background: var(--card); }
+  .exec p { color: #3d3833; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  @media (max-width: 720px) { .grid { grid-template-columns: 1fr; } }
+  .box { border-radius: 12px; padding: 20px 22px; }
+  .box.before { background: #fdf2f2; border: 1px solid #f5c6c6; }
+  .box.after { background: var(--green-bg); border: 1px solid #bbe3c4; }
+  .box h3 { font-size: 16px; margin-bottom: 10px; }
+  .box.before h3 { color: var(--red-dark); }
+  .box.after h3 { color: var(--green); }
+  .box ul { padding-right: 18px; }
+  .box li { margin-bottom: 6px; font-size: 14px; color: #3d3833; }
+  table { width: 100%; border-collapse: collapse; margin: 10px 0; }
+  th, td { border: 1px solid var(--border); padding: 10px 14px; text-align: right; font-size: 14px; }
+  th { background: var(--ink); color: #fff; font-weight: 600; }
+  tr:nth-child(even) td { background: #faf6f2; }
+  .pill { display: inline-block; padding: 2px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; }
+  .pill.pass { background: #dcfce7; color: var(--green); }
+  .pill.summary { background: #eef2ff; color: #3730a3; }
+  .pill.warn { background: var(--amber-bg); color: var(--amber); }
+  .foot {
+    text-align: center;
+    color: var(--muted);
+    font-size: 12px;
+    margin-top: 36px;
+    padding-top: 18px;
+    border-top: 1px solid var(--border);
+  }
+  code {
+    background: #f1ede8;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 13px;
+    direction: ltr;
+    display: inline-block;
+  }
+  .note { background: #fff7ed; border: 1px solid #fed7aa; border-radius: 10px; padding: 14px 18px; font-size: 13.5px; color: #7c2d12; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <span class="tag">تقرير تنفيذي — موجه للإدارة</span>
+  <h1>إطلاق البنية الجديدة لبيانات أوامر البيع (Sales Orders)</h1>
+  <p>المرحلة الثانية من خطة التطوير — تحويل ملف التصميم إلى قاعدة بيانات فعلية ومُختبَرة</p>
+  <div class="meta">
+    <div>التاريخ: <b>2026-08-02</b></div>
+    <div>المرحلة: <b>Phase 2 — Schema</b></div>
+    <div>الحالة: <b>مكتملة 100%</b></div>
+  </div>
+</header>
+
+<div class="card exec">
+  <h2>ملخص تنفيذي</h2>
+  <p>
+    جهّزنا قاعدة البيانات فعليًا لتشغيل نظام أوامر البيع الكامل: كل الجداول الجديدة اتعملت على
+    السيرفر الحقيقي، واتختبرت برمجيًا بـ <b>49 اختبارًا كلها ناجحة</b>، وعملية رفع الـ Schema
+    للبيئة الإنتاجية تمت بنجاح من غير أي تعارض. النتيجة: النظام جاهز لاستقبال المرحلة التالية
+    (الصلاحيات والمنطق التجاري) على أساس بيانات سليمة ومضمونة.
+  </p>
+</div>
+
+<h2>قبل / بعد</h2>
+<div class="grid">
+  <div class="box before">
+    <h3>قبل (المشكلة)</h3>
+    <ul>
+      <li>أوامر البيع والتسليم لم تكن موجودة في قاعدة البيانات إطلاقًا</li>
+      <li>سجل هجرات (migrations) قديم مكسور — لا يمكن إعادة بناء قاعدة البيانات من الصفر عليه</li>
+      <li>لا توجد أي اختبارات تلقائية تضمن سلامة بنية البيانات</li>
+    </ul>
+  </div>
+  <div class="box after">
+    <h3>بعد (الحل)</h3>
+    <ul>
+      <li>سجل هجرات نظيف: خطوة أساس + خطوة أوامر البيع — يُبنى من الصفر ويُطبق في أي بيئة</li>
+      <li>جداول أوامر البيع، التسليم، الموافقات، الحجوزات كلها اتعملت واتربطت بعلاقات صحيحة</li>
+      <li>نظام اختبارات آلية يتحقق من البنية عند كل تعديل مستقبلي</li>
+    </ul>
+  </div>
+</div>
+
+<h2>إيه اللي اتبني بالظبط؟</h2>
+<div class="card">
+  <table>
+    <tr><th>العنصر</th><th>الوصف</th></tr>
+    <tr><td>جداول جديدة</td><td>أمر البيع، بنوده، حالة الأمر، الموافقات، إذن التسليم، بنوده، حجوزات المخزون</td></tr>
+    <tr><td>قواعد العلاقات</td><td>العميل يمتلك أوامر — المنتج محمي من الحذف لو عليه حركة — الأوامر تحفظ سجلها بالكامل</td></tr>
+    <tr><td>مؤشرات أداء (Indexes)</td><td>تسريع البحث عن الأوامر حسب الحالة والعميل والتاريخ</td></tr>
+    <tr><td>بيئة اختبار منفصلة</td><td>قاعدة بيانات اختبار على نفس السيرفر، معزولة تمامًا عن بيانات العمل</td></tr>
+    <tr><td>اختبارات تلقائية</td><td>49 اختبارًا تغطي البناء، العلاقات، القيود، الأداء (10,000 أمر)</td></tr>
+  </table>
+</div>
+
+<h2>أداء الاختبارات وتحسيناته</h2>
+<div class="card">
+  <table>
+    <tr><th>القياس</th><th>القيمة</th></tr>
+    <tr><td>زمن التشغيل الكامل قبل التحسين</td><td><b>~389 ثانية</b> (6.5 دقيقة)</td></tr>
+    <tr><td>زمن التشغيل الكامل بعد التحسين</td><td><b>~169 ثانية</b> (~2.8 دقيقة)</td></tr>
+    <tr><td>نسبة التسريع</td><td><span class="pill pass">× 2.3 أسرع</span></td></tr>
+  </table>
+  <p style="margin-top:12px;"><b>أسباب التحسين (موثقة للمطورين):</b></p>
+  <ul style="padding-right:18px;">
+    <li>استبدال حذف الجداول واحدًا تلو الآخر (23 أمر <code>deleteMany</code>) بـ <code>TRUNCATE ... CASCADE</code> في أمر واحد</li>
+    <li>تقليل عمليات <code>DROP/CREATE SCHEMA</code> من 25 أمر منفصل لأمرين</li>
+    <li>عدم إعادة تشغيل الـ Migrations إذا كانت الـ Schema محدثة بالفعل — الـ <code>globalSetup</code> يتحقق أولًا ثم يتجاوز الـ rebuild</li>
+  </ul>
+</div>
+
+<h2>حالة الاختبار</h2>
+<div class="card">
+  <table>
+    <tr><th>الاختبار</th><th>النتيجة</th></tr>
+    <tr><td>تطبيق الهجرات من قاعدة بيانات فارغة من الصفر</td><td><span class="pill pass">ناجح ✓</span></td></tr>
+    <tr><td>العلاقات بين الجداول (منع ربط بيانات غير موجودة)</td><td><span class="pill pass">ناجح ✓</span></td></tr>
+    <tr><td>القيم الافتراضية والحقول الإجبارية</td><td><span class="pill pass">ناجح ✓</span></td></tr>
+    <tr><td>قواعد الحذف (منع حذف سجلات لها تاريخ)</td><td><span class="pill pass">ناجح ✓</span></td></tr>
+    <tr><td>مؤشرات الأداء والبحث</td><td><span class="pill pass">ناجح ✓</span></td></tr>
+    <tr><td>اختبار أداء بإدخال 10,000 أمر والبحث فيها</td><td><span class="pill pass">ناجح ✓</span></td></tr>
+    <tr><td>تطابق قاعدة البيانات مع تعريف المخطط النهائي (Drift = صفر)</td><td><span class="pill pass">ناجح ✓</span></td></tr>
+  </table>
+  <p class="note" style="margin-top:14px;">جميع النتائج مثبتة من تشغيل فعلي، وليس افتراضيًا. لم تُلمس بيانات العمل الحقيقية أثناء أي اختبار.</p>
+</div>
+
+<h2>الأثر على الشغل اليومي</h2>
+<div class="card">
+  <p>
+    <b>لا تغيير</b> على استخدام الفريق الحالي للنظام. البنية الجديدة تعمل في الخلفية كأساس
+    لمراحل قادمة. بيانات المخزون والعملاء والموردين الموجودة سليمه ولم يتم تعديلها.
+  </p>
+</div>
+
+<h2>الخطوة الجاية</h2>
+<div class="card">
+  <p>
+    <b>Phase 3 — الصلاحيات والمنطق التجاري:</b> تفعيل أدوار الصلاحيات الجديدة وخدمات أوامر البيع
+    (إنشاء، اعتماد، تأكيد، تسليم) على أساس البنية الجديدة، ثم واجهة المستخدم في مرحلة تالية.
+  </p>
+</div>
+
+<div class="foot">
+  نظام AD Station — تقرير المرحلة 2 (Schema v2) — يُنشأ آليًا عند إتمام كل مرحلة رئيسية
+</div>
+
+</div>
+</body>
+</html>
