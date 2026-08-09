@@ -13,6 +13,7 @@ import {
   transitionToClosed,
   cancelOrder,
   expireSalesOrders,
+  getOrder,
 } from '../../src/services/salesOrderService';
 
 const user = { userId: 'u-test-manager', name: 'مصطفى' };
@@ -587,5 +588,251 @@ describe('Sales Orders Service — Concurrency (Race Condition)', () => {
     });
     const deliveredItem = finalOrder!.items.find((i) => i.productId === productId)!;
     expect(deliveredItem.deliveredQty).toBe(10);
+  });
+});
+
+describe('Sales Orders Service — Phase 3 Approval Hardening', () => {
+  beforeEach(async () => {
+    await cleanDb();
+    await testPrisma.systemSettings.upsert({
+      where: { key: 'approvalThresholdValue' },
+      update: { value: '500' },
+      create: { key: 'approvalThresholdValue', value: '500' },
+    });
+  });
+
+  afterAll(async () => {
+    await cleanDb();
+  });
+
+  async function setThresholdCurrency(currency: string) {
+    await testPrisma.systemSettings.upsert({
+      where: { key: 'approvalThresholdCurrency' },
+      update: { value: currency },
+      create: { key: 'approvalThresholdCurrency', value: currency },
+    });
+  }
+
+  async function seedReceivedPo(productId: string) {
+    const supplier = await testPrisma.supplier.create({ data: { name: 'مورد الاختبار' } });
+    await testPrisma.purchaseOrder.create({
+      data: {
+        orderNumber: `PO-TEST-${Date.now()}`,
+        supplierId: supplier.id,
+        status: 'received',
+        totalAmount: 300,
+        subtotal: 300,
+        grandTotal: 300,
+        items: {
+          create: [{ productId, quantity: 10, unitPrice: 30, totalPrice: 300 }],
+        },
+      },
+    });
+  }
+
+  test('Grand total EQUALS threshold → confirmed, NO approval (not ">" only)', async () => {
+    await testPrisma.systemSettings.upsert({
+      where: { key: 'approvalThresholdValue' },
+      update: { value: '1250' },
+      create: { key: 'approvalThresholdValue', value: '1250' },
+    });
+    const { order } = await makeOrder(); // grandTotal = 1250
+
+    const confirmed = await confirmOrder(testPrisma, order.id, user);
+    expect(confirmed.status).toBe('confirmed');
+    expect(confirmed.approvalStatus).toBe('none');
+
+    const approvals = await testPrisma.salesOrderApproval.findMany({ where: { salesOrderId: order.id } });
+    expect(approvals).toHaveLength(0);
+  });
+
+  test('Different currency → forced approval even below numeric threshold', async () => {
+    await setThresholdCurrency('USD'); // order currency stays EGP → mismatch
+    const { order } = await makeOrder(); // 1250 EGP < 5000 numerically, but currency differs
+
+    const result = await confirmOrder(testPrisma, order.id, user);
+    expect(result.status).toBe('draft');
+    expect(result.approvalStatus).toBe('pending');
+
+    const approval = await testPrisma.salesOrderApproval.findFirst({ where: { salesOrderId: order.id } });
+    expect(approval!.status).toBe('pending');
+  });
+
+  test('Insufficient stock AT APPROVE → 409 rollback: order draft, approval still pending, no reserve', async () => {
+    const { order, productId } = await makeOrder(); // grandTotal 1250 > 500
+    await confirmOrder(testPrisma, order.id, user); // → pending
+
+    await testPrisma.product.update({ where: { id: productId }, data: { stock: 2 } }); // needs 10
+
+    await expect(approveOrder(testPrisma, order.id, owner)).rejects.toThrow(/Insufficient stock/);
+
+    const finalOrder = await testPrisma.salesOrder.findUnique({ where: { id: order.id } });
+    expect(finalOrder!.status).toBe('draft');
+
+    const approval = await testPrisma.salesOrderApproval.findFirst({ where: { salesOrderId: order.id } });
+    expect(approval!.status).toBe('pending'); // not approved, not deleted
+
+    const p1 = await testPrisma.product.findUnique({ where: { id: productId } });
+    expect(p1!.reservedStock).toBe(0);
+    const reservations = await testPrisma.reservation.findMany();
+    expect(reservations).toHaveLength(0);
+  });
+
+  test('Parallel double-approve → exactly one confirms (200) + one 409, single reservation', async () => {
+    const { order, productId } = await makeOrder();
+    await confirmOrder(testPrisma, order.id, user); // → pending
+
+    const [r1, r2] = await Promise.allSettled([
+      approveOrder(testPrisma, order.id, owner),
+      approveOrder(testPrisma, order.id, owner),
+    ]);
+
+    const ok = [r1, r2].filter((r) => r.status === 'fulfilled');
+    const failed = [r1, r2].filter((r) => r.status === 'rejected');
+    expect(ok).toHaveLength(1);
+    expect(failed).toHaveLength(1);
+
+    const err = (failed[0] as PromiseRejectedResult).reason;
+    expect(err.status ?? err.message).toBeTruthy();
+    expect(err.status).toBe(409);
+
+    const finalOrder = await testPrisma.salesOrder.findUnique({ where: { id: order.id } });
+    expect(finalOrder!.status).toBe('confirmed');
+
+    const approvals = await testPrisma.salesOrderApproval.findMany({ where: { salesOrderId: order.id } });
+    expect(approvals.filter((a) => a.status === 'approved')).toHaveLength(1);
+
+    const p1 = await testPrisma.product.findUnique({ where: { id: productId } });
+    expect(p1!.reservedStock).toBe(10);
+    const reservations = await testPrisma.reservation.findMany();
+    expect(reservations).toHaveLength(2); // one per order item (منتج أ + منتج ب)
+  });
+
+  test('Re-submit: Reject → Edit → Confirm → new pending, old decision superseded', async () => {
+    const { order } = await makeOrder(); // 1250 > 500
+    await confirmOrder(testPrisma, order.id, user);
+    await rejectOrder(testPrisma, order.id, owner, {}, 'العميل غير موثوق');
+
+    const rejectedApproval = await testPrisma.salesOrderApproval.findFirst({
+      where: { salesOrderId: order.id, status: 'rejected' },
+    });
+    expect(rejectedApproval).toBeTruthy();
+
+    // Edit draft — content changed, stale decision must be voided
+    const edited = await updateOrder(
+      testPrisma,
+      order.id,
+      {
+        clientId: order.clientId,
+        items: [{ productId: order.items[0].productId, orderedQty: 7, sellingPrice: 100 }],
+      },
+      user
+    );
+    expect(edited.status).toBe('draft');
+    expect(edited.approvalStatus).toBe('none');
+
+    // The same decision record is preserved but superseded — never deleted
+    const oldNow = await testPrisma.salesOrderApproval.findUnique({ where: { id: rejectedApproval!.id } });
+    expect(oldNow!.status).toBe('superseded');
+
+    // Re-confirm → brand new pending approval
+    const reconfirmed = await confirmOrder(testPrisma, order.id, user);
+    expect(reconfirmed.status).toBe('draft');
+    expect(reconfirmed.approvalStatus).toBe('pending');
+
+    const approvals = await testPrisma.salesOrderApproval.findMany({
+      where: { salesOrderId: order.id },
+      orderBy: { createdAt: 'asc' },
+    });
+    expect(approvals).toHaveLength(2);
+    expect(approvals[0].status).toBe('superseded'); // old decision preserved, not deleted
+    expect(approvals[1].status).toBe('pending');
+  });
+
+  test('Re-submit WITHOUT edit → still rejected (409)', async () => {
+    const { order } = await makeOrder();
+    await confirmOrder(testPrisma, order.id, user);
+    await rejectOrder(testPrisma, order.id, owner, {}, 'رفض');
+    await expect(confirmOrder(testPrisma, order.id, user)).rejects.toThrow(/rejected/);
+    await expect(confirmOrder(testPrisma, order.id, user)).rejects.toMatchObject({ status: 409 });
+  });
+
+  test('Moving-average costPrice frozen at confirm with real numbers (PO received)', async () => {
+    // Raise threshold so this 1250 EGP order confirms directly (no approval gate)
+    await testPrisma.systemSettings.upsert({
+      where: { key: 'approvalThresholdValue' },
+      update: { value: '5000' },
+      create: { key: 'approvalThresholdValue', value: '5000' },
+    });
+    const { order, productId, product2Id } = await makeOrder();
+    await seedReceivedPo(productId); // 10 units @ 30 → moving average 30
+
+    const confirmed = await confirmOrder(testPrisma, order.id, user);
+    expect(confirmed.status).toBe('confirmed');
+
+    const itemA = confirmed.items.find((i: any) => i.productId === productId);
+    const itemB = confirmed.items.find((i: any) => i.productId === product2Id);
+    expect(itemA.costPrice).toBe(30); // frozen from PO moving average
+    expect(itemB.costPrice).toBe(0); // no PO for p2 → 0
+
+    // Frozen = immutable after confirm
+    await expect(
+      updateOrder(
+        testPrisma,
+        order.id,
+        {
+          clientId: order.clientId,
+          items: [{ productId: productId, orderedQty: 1, sellingPrice: 1 }],
+        },
+        user
+      )
+    ).rejects.toThrow(/draft/);
+
+    const after = await testPrisma.salesOrder.findUnique({ where: { id: order.id }, include: { items: true } });
+    expect(after!.items.find((i) => i.productId === productId)!.costPrice).toBe(30);
+  });
+
+  test('Projection: approvalStatus/rejectionNote derived from latest decision', async () => {
+    const { order } = await makeOrder();
+
+    // before any approval → none
+    const created = (await getOrder(testPrisma, order.id)) as any;
+    expect(created!.approvalStatus).toBe('none');
+    expect(created!.rejectionNote).toBeNull();
+
+    // pending → status pending, no note
+    const pending = await confirmOrder(testPrisma, order.id, user);
+    expect(pending.approvalStatus).toBe('pending');
+    expect(pending.rejectionNote).toBeNull();
+
+    // rejected → status rejected + note with reason
+    const rejected = await rejectOrder(testPrisma, order.id, owner, {}, 'سبب الرفض');
+    expect(rejected.approvalStatus).toBe('rejected');
+    expect(rejected.rejectionNote).toBe('سبب الرفض');
+
+    const rejectedFetch = (await getOrder(testPrisma, order.id)) as any;
+    expect(rejectedFetch!.approvalStatus).toBe('rejected');
+    expect(rejectedFetch!.rejectionNote).toBe('سبب الرفض');
+
+    // edit supersedes the rejection → back to none
+    await updateOrder(
+      testPrisma,
+      order.id,
+      {
+        clientId: order.clientId,
+        items: [{ productId: order.items[0].productId, orderedQty: 6, sellingPrice: 100 }],
+      },
+      user
+    );
+
+    // confirm again → new pending, then approve → approved + note cleared
+    await confirmOrder(testPrisma, order.id, user);
+    const approved = await approveOrder(testPrisma, order.id, owner);
+    expect(approved.approvalStatus).toBe('approved');
+    expect(approved.rejectionNote).toBeNull();
+
+    const fetched = (await getOrder(testPrisma, order.id)) as any;
+    expect(fetched!.approvalStatus).toBe('approved');
+    expect(fetched!.rejectionNote).toBeNull();
   });
 });

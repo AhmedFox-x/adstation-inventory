@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html dir="rtl" lang="ar">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>تقرير تنفيذي — متانة سير اعتماد الطلبات</title>
+<style>
+  :root {
+    --red: #DC2626; --red-dark: #B91C1C; --ink: #0d0a08; --paper: #faf7f4;
+    --card: #ffffff; --muted: #6b6660; --border: #e7e1da;
+    --green: #166534; --green-bg: #f0fdf4; --amber-bg: #fffbeb; --amber: #92400e;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: "Segoe UI", Tahoma, Arial, sans-serif; background: var(--paper); color: var(--ink); line-height: 1.7; padding: 40px 16px; }
+  .wrap { max-width: 900px; margin: 0 auto; }
+  header { background: linear-gradient(135deg, var(--ink) 0%, #1a1410 100%); color: #fff; border-radius: 16px; padding: 36px 40px; margin-bottom: 28px; }
+  header .tag { display: inline-block; background: var(--red); color: #fff; font-size: 12px; font-weight: 700; letter-spacing: 0.08em; padding: 4px 12px; border-radius: 999px; margin-bottom: 14px; }
+  header h1 { font-size: 26px; margin-bottom: 8px; }
+  header p { color: #d8d2cb; font-size: 15px; }
+  .meta { display: flex; gap: 24px; flex-wrap: wrap; margin-top: 18px; }
+  .meta div { font-size: 13px; color: #b8b0a7; }
+  .meta b { color: #fff; }
+  h2 { font-size: 20px; margin: 32px 0 14px; padding-right: 12px; border-right: 4px solid var(--red); }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 20px 24px; margin-bottom: 14px; }
+  table { width: 100%; border-collapse: collapse; margin: 12px 0; }
+  th, td { text-align: right; padding: 10px 12px; border-bottom: 1px solid var(--border); font-size: 14px; }
+  th { background: #f4f0eb; font-size: 13px; }
+  .badge { display: inline-block; font-size: 12px; font-weight: 700; padding: 2px 10px; border-radius: 999px; margin-left: 4px; }
+  .b-green { background: var(--green-bg); color: var(--green); }
+  .b-amber { background: var(--amber-bg); color: var(--amber); }
+  .success { background: var(--green-bg); border: 1px solid #bbf7d0; }
+  ul { padding-right: 22px; }
+  li { margin-bottom: 6px; font-size: 14px; }
+  code { background: #f4f0eb; padding: 1px 6px; border-radius: 6px; font-size: 13px; }
+  .footer { margin-top: 28px; color: var(--muted); font-size: 12px; text-align: center; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <span class="tag">تقرير تنفيذي — Phase 3</span>
+  <h1>متانة سير اعتماد الطلبات (Approval Workflow Hardening)</h1>
+  <p>تحصين عملية اعتماد طلبات البيع الكبيرة: منع الموافقة المزدوجة، إعادة تقديم طلب مرفوض بعد التعديل، وضمان عدم المساس ببيانات الطلب بعد اعتماده.</p>
+  <div class="meta">
+    <div>التاريخ: <b>2026-08-09</b></div>
+    <div>المرحلة: <b>Phase 3</b></div>
+    <div>الحالة: <b>مكتملة — 30 اختبار طلبات + 36 اختبار صلاحيات ناجحين + بناء نظيف</b></div>
+  </div>
+</header>
+
+<h2>1. ملخص تنفيذي</h2>
+<div class="card">
+  <p>قبل هذه المرحلة، كان فيه ثغرات خطيرة في سير اعتماد الطلبات الكبيرة: ممكن طلب مرفوض يُحاول الـ Confirm تاني من غير ما يتعدل، وممكن الطلب يُوافق عليه مرتين في نفس اللحظة بأمرين مخزون متناقضين.</p>
+  <p>الآن النظام ممنوع إنه يخلّي ده يحصل: القرارات القديمة بتبطل تلقائيًا بمجرد تعديل الطلب، الموافقة المزدوجة مستحيلة (واحد بينجح والباقي يُرفض)، وأي طلب بيتجمّد كاملًا (سعر/تكلفة/مخزون محجوز) فور اعتماده.</p>
+</div>
+
+<h2>2. قبل / بعد</h2>
+<div class="card">
+  <table>
+    <tr><th>قبل</th><th>بعد</th></tr>
+    <tr><td>طلب مرفوض ممكن يُرسل للاعتماد تاني كما هو من غير أي تعديل.</td><td>ممنوع: لازم الطلب يتعدل فعلًا قبل إعادة الإرسال، وأي قرار قديم بيتوسم "ملغي/مستبدل" ويُحتفظ به للتاريخ (لا يُحذف أبدًا).</td></tr>
+    <tr><td>موافقة مزدوجة (نقرتين في نفس الوقت) ممكن تعمل حجز مخزون مضاعف خاطئ.</td><td>مستحيل: أول موافقة تكسب وثاني محاولة تُرفض بتعليم "تعارض في الحالة" (409) — حجز واحد فقط.</td></tr>
+    <tr><td>السعر/التكلفة والمخزون ممكن يتغيروا بعد اعتماد الطلب.</td><td>الطلب يتجمد فور الاعتماد: تكلفة المتوسط متجمدة، والتعديل بعد التأكيد ممنوع تمامًا.</td></tr>
+    <tr><td>حد اعتماد "5000" مكتوب كنص في الكود (magic number) بلا مصدر واضح.</td><td>الحد يُقرأ من إعدادات النظام دائمًا، مع قيمة افتراضية موثقة تنبّه لو الإعداد ناقص، والـ Seed ينشئ الإعداد من غير ما يمس قيمة عدّلها المدير.</td></tr>
+    <tr><td>رفض غير واضح: "تعارض في الحالة" كان يُرجع رمز خطأ عام (400).</td><td>تعارضات الحالة (موافقة مزدوجة، Confirm لطلب أكيد) بترجع 409 صريح للواجهة لتعرض رسالة مفهومة.</td></tr>
+    <tr><td>حالة الاعتماد وسبب الرفض مفيش طريقة سهلة للواجهة تقرأهم.</td><td>أي طلب بيُرجع معه <code>approvalStatus</code> (بدون/قيد الاعتماد/معتمد/مرفوض) وسبب الرفض مباشرة — من غير تخزين زائد.</td></tr>
+  </table>
+</div>
+
+<h2>3. الأثر على الشغل اليومي</h2>
+<div class="card">
+  <ul>
+    <li><b>للفريق التشغيلي (المدير):</b> لسه بيعمل طلبات ويؤكدها زي ما هو. الفرق: لو الطلب اتُرفض، الواجهة هتطالبه صراحة بتعديل الطلب قبل إعادة الإرسال — بدل ما يفضل يدور في حلقة مفرغة.</li>
+    <li><b>للمالك:</b> لسه بيعتمد ويرفض الطلبات الكبيرة. الجديد: اعتماده يُنفَّذ مرة واحدة فقط حتى لو اتنقر مرتين — أرقام المخزون مضمونة إنها مش هتتضاعف بالخطأ.</li>
+    <li><b>للمتابع:</b> مفيش تغيير في الصلاحيات — القراءة فقط كما كانت (الاعتماد/الرفض ظلوا حصريًا للمالك).</li>
+    <li><b>الواجهة:</b> التغيير شفاف تقنيًا — حقول جديدة تُقرأ إن وجدت؛ مفيش حاجة بتتكسّر.</li>
+  </ul>
+</div>
+
+<h2>4. حالة الاختبار</h2>
+<div class="card success">
+  <table>
+    <tr><th>التحقق</th><th>النتيجة</th></tr>
+    <tr><td>اختبارات أوامر البيع (30 اختبارًا — منهم 8 جدد لسير الاعتماد)</td><td><span class="badge b-green">30/30 نجحت ✅</span></td></tr>
+    <tr><td>اختبارات الصلاحيات (36 اختبارًا — إثبات سلبي للمدير/المتابع على الاعتماد/الرفض + إيجابي للمالك)</td><td><span class="badge b-green">36/36 نجحت ✅</span></td></tr>
+    <tr><td>إثبات الـ DoD السبعة (لا موافقة مزدوجة، لا حجز مزدوج، لا موافقة على بيانات قديمة، لا إعادة إرسال بلا تعديل، لا تغيير سعر بعد التجميد، لا تجاوز للحد، لا نقص مخزون عند الاعتماد)</td><td><span class="badge b-green">7/7 ✅</span></td></tr>
+    <tr><td>سباق البيانات: اعتماد متوازي ×2 → واحد 200 + الآخر 409 + حجز واحد</td><td><span class="badge b-green">نجح ✅</span></td></tr>
+    <tr><td>البناء (TypeScript) بدون أخطاء</td><td><span class="badge b-green">نجح ✅</span></td></tr>
+  </table>
+</div>
+
+<h2>5. الملفات المتأثرة</h2>
+<div class="card">
+  <ul>
+    <li><code>src/services/salesOrderService.ts</code> — إبطال القرارات القديمة عند التعديل (<code>superseded</code>)، اشتقاق <code>approvalStatus/rejectionNote</code>، تحويل تعارضات الحالة إلى 409، ثابت <code>DEFAULT_APPROVAL_THRESHOLD</code>.</li>
+    <li><code>src/seed.ts</code> — إنشاء إعدادات الحد الافتراضية (5000 / EGP) إن لم تكن موجودة، دون الكتابة فوق قيمة يدوية.</li>
+    <li><code>tests/sales-orders/salesOrderService.test.ts</code> — 8 اختبارات جديدة لتغطية الـ edge cases.</li>
+    <li><code>docs/design/sales-orders-v2-design.md</code> — توثيق قسم "Phase 3 — Approval Workflow Hardening".</li>
+    <li>لا تغيير في قاعدة البيانات أو الـ Schema إطلاقًا.</li>
+  </ul>
+</div>
+
+<h2>6. الخطوة الجاية</h2>
+<div class="card">
+  <p>الاختبار اليدوي الشامل (E2E) على بيئة العمل: سيناريو "إنشاء طلب كبير ← اعتماد ← محاولة اعتماد مزدوجة" وتأكيد أن المخزون المحجوز حجزًا واحدًا، وسيناريو "رفض ← تعديل ← إعادة إرسال" والتأكد من ظهور قرار جديد قيد الاعتماد. ثم المتابعة مع خطة الـ Roadmap التالية.</p>
+</div>
+
+<div class="footer">AD Station — نظام إدارة المخزون — تقرير Phase 3: متانة سير الاعتماد — 2026-08-09</div>
+
+</div>
+</body>
+</html>

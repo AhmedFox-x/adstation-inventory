@@ -76,14 +76,22 @@ async function runTx<T>(client: PrismaClient, fn: (tx: Tx) => Promise<T>): Promi
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
+const DEFAULT_APPROVAL_THRESHOLD = { value: 5000, currency: "EGP" };
+
 async function getApprovalThreshold(tx: Tx): Promise<{ value: number; currency: string }> {
   const [vRow, cRow] = await Promise.all([
     tx.systemSettings.findUnique({ where: { key: "approvalThresholdValue" } }),
     tx.systemSettings.findUnique({ where: { key: "approvalThresholdCurrency" } }),
   ]);
+  const value = vRow && vRow.value !== "" && !Number.isNaN(Number(vRow.value)) ? Number(vRow.value) : null;
+  if (value === null || !cRow) {
+    console.warn(
+      `[approval] SystemSettings threshold missing/invalid (value=${vRow?.value ?? "?"}, currency=${cRow?.value ?? "?"}) — using default ${DEFAULT_APPROVAL_THRESHOLD.value} ${DEFAULT_APPROVAL_THRESHOLD.currency}. Run db:seed to persist.`
+    );
+  }
   return {
-    value: vRow ? Number(vRow.value) || 0 : 5000,
-    currency: cRow?.value || "EGP",
+    value: value ?? DEFAULT_APPROVAL_THRESHOLD.value,
+    currency: cRow?.value || DEFAULT_APPROVAL_THRESHOLD.currency,
   };
 }
 
@@ -194,6 +202,22 @@ async function getOrderFull(tx: Tx, id: string) {
 async function requireOrderFull(tx: Tx, id: string) {
   const order = await getOrderFull(tx, id);
   if (!order) throw new SalesOrderError("Sales order not found", 404);
+  return decorateApproval(order);
+}
+
+// ─── Approval projection (Phase 3) ───────────────────────────────────────────
+// SalesOrderApproval هو الـ source of truth — approvalStatus/rejectionNote
+// بتتقري من آخر قرار مش superseded من غير أي حقل إضافي في SalesOrder.
+function decorateApproval(order: any) {
+  const approvals = Array.isArray(order.approvals)
+    ? [...order.approvals].sort(
+        (a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+      )
+    : [];
+  const latest = approvals.find((a: any) => a.status !== "superseded");
+  const status = latest ? latest.status : "none";
+  order.approvalStatus = status;
+  order.rejectionNote = status === "rejected" ? latest.reason || null : null;
   return order;
 }
 
@@ -354,6 +378,18 @@ export async function updateOrder(client: PrismaClient, id: string, input: Updat
       },
     });
 
+    // Void stale approvals — المحتوى اتغيّر، القرارات القديمة (pending/rejected)
+    // مبقتش سارية. من غير حذف — الـ history يفضل append-only.
+    const staleApprovals = await tx.salesOrderApproval.findMany({
+      where: { salesOrderId: id, status: { in: ["pending", "rejected"] } },
+    });
+    for (const stale of staleApprovals) {
+      await tx.salesOrderApproval.update({
+        where: { id: stale.id },
+        data: { status: "superseded" },
+      });
+    }
+
     return requireOrderFull(tx, updated.id);
   });
 }
@@ -376,7 +412,7 @@ async function executeConfirmedTransition(
   // Re-read fresh after acquiring row locks — protects against double reserve
   const fresh = await tx.salesOrder.findUnique({ where: { id: orderId }, include: { items: true, client: true } });
   if (!fresh) throw new SalesOrderError("Sales order not found", 404);
-  if (fresh.status !== "draft") throw new SalesOrderError(`Cannot confirm order in status ${fresh.status}`, 400);
+  if (fresh.status !== "draft") throw new SalesOrderError(`Cannot confirm order in status ${fresh.status}`, 409);
 
   const products = await tx.product.findMany({ where: { id: { in: productIds } } });
   const productMap = new Map(products.map((p) => [p.id, p]));
@@ -509,7 +545,7 @@ export async function confirmOrder(client: PrismaClient, id: string, user: Servi
     });
     if (!order) throw new SalesOrderError("Sales order not found", 404);
     if (order.deletedAt) throw new SalesOrderError("Sales order not found", 404);
-    if (order.status !== "draft") throw new SalesOrderError(`Cannot confirm order in status ${order.status}`, 400);
+    if (order.status !== "draft") throw new SalesOrderError(`Cannot confirm order in status ${order.status}`, 409);
 
     const latestApproval = order.approvals?.[0];
     if (latestApproval?.status === "pending") {
@@ -1115,6 +1151,7 @@ export async function listOrders(
       include: {
         client: { select: { id: true, name: true } },
         items: { include: { product: { select: { id: true, name: true, sku: true, stock: true } } } },
+        approvals: { select: { id: true, status: true, reason: true, createdAt: true }, orderBy: { createdAt: "desc" } },
       },
       orderBy: { createdAt: "desc" },
       skip: (page - 1) * limit,
@@ -1157,6 +1194,7 @@ export async function listOrders(
       }
       (order as any).returnedQty = returnedTotal;
       (order as any).netSoldQty = Math.max(deliveredTotal - returnedTotal, 0);
+      decorateApproval(order as any);
     }
   }
 
@@ -1183,6 +1221,7 @@ export async function getOrder(client: PrismaClient, id: string) {
       }
       (order as any).returnedQty = returnedTotal;
       (order as any).netSoldQty = Math.max(deliveredTotal - returnedTotal, 0);
+      decorateApproval(order as any);
     }
     return order;
   });

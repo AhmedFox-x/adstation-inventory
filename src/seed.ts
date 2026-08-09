@@ -18,6 +18,22 @@ const products = [
   { name: "بانر فينيل", variant: "2×1 متر", stock: 3, minStock: 5, category: "مواد إعلانية" },
 ];
 
+async function ensureApprovalThreshold(prisma: PrismaClient) {
+  const defaults = [
+    { key: "approvalThresholdValue", value: "5000" },
+    { key: "approvalThresholdCurrency", value: "EGP" },
+  ];
+  for (const d of defaults) {
+    const existing = await prisma.systemSettings.findUnique({ where: { key: d.key } });
+    if (existing) {
+      console.log(`ℹ️  SystemSettings: ${d.key} already exists (${existing.value}) — keeping current value.`);
+    } else {
+      await prisma.systemSettings.create({ data: d });
+      console.log(`✅ SystemSettings: created ${d.key}=${d.value}`);
+    }
+  }
+}
+
 async function main() {
   const existing = await prisma.product.count();
   if (existing === 0) {
@@ -43,6 +59,8 @@ async function main() {
 
   const roles = await upsertDefaultRoles(prisma);
   console.log(`✅ Roles: created=${roles.created.join(',') || 'none'} updated=${roles.updated.join(',') || 'none'}`);
+
+  await ensureApprovalThreshold(prisma);
 }
 
 main()

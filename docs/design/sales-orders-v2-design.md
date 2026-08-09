@@ -745,6 +745,65 @@ const result = await prisma.$transaction(async (tx) => {
 
 ---
 
+## 11. Phase 3 — Approval Workflow Hardening (2026-08-09)
+
+> **Scope frozen:** لا تعديل Schema/Migration في هذه المرحلة. `SalesOrderApproval` يبقى الـ source of truth الوحيد لقرارات الاعتماد. لا حقول جديدة على `SalesOrder`.
+
+### 11.1 Re-submit بعد الرفض (Rejected → Edit → Confirm)
+
+| الخطوة | السلوك |
+|--------|--------|
+| `reject` | `SalesOrderApproval(status=rejected, reason)` — الطلب يفضل `draft` |
+| `updateOrder` (تعديل المسودة) | كل الـ approvals ذات الحالة `pending` أو `rejected` بتتوسم `superseded` — **مفيش حذف أبدًا**، الـ history يفضل append-only |
+| `confirm` بعد التعديل | آخر قرار `superseded` → يُعاد تقييم الـ threshold من جديد → Approval جديد `pending` |
+| `confirm` بدون تعديل | آخر قرار لسه `rejected` → **409 "Order was rejected. Edit the order before confirming again."** |
+
+هذا يحقق: **ممنوع الموافقة على بيانات قديمة** + **ممنوع re-submit بدون تعديل** — القرار القديم يظل موجودًا للـ audit ومُعلَّم إنه لم يعد ساريًا.
+
+### 11.2 Derived Projection — `approvalStatus` / `rejectionNote`
+
+لا توجد أعمدة `approvalStatus` أو `rejectionNote` على `SalesOrder`. تُشتق القيم في الـ service من آخر `SalesOrderApproval` غير الـ `superseded` (مرتبة `createdAt` تنازليًا):
+
+| آخر قرار فعّال | `approvalStatus` | `rejectionNote` |
+|----------------|------------------|-----------------|
+| لا يوجد (أو الكل `superseded`) | `none` | `null` |
+| `pending` | `pending` | `null` |
+| `approved` | `approved` | `null` |
+| `rejected` | `rejected` | `reason` (أو `null` لو مفيش سبب) |
+
+الحقلان يظهران في استجابات: `create/update/confirm/approve/reject/cancel/transition` + `GET /sales-orders` + `GET /sales-orders/:id` (إضافة additive — لا كسر في الحقول الموجودة).
+
+### 11.3 State Conflicts = 409
+
+| السيناريو | الكود |
+|-----------|-------|
+| Confirm على طلب مش `draft` (من ضمنها **approve مزدوج**) | `409` (كان `400`) |
+| Confirm و Approval لسه `pending` | `409` |
+| Confirm و آخر قرار `rejected` (بدون تعديل) | `409` |
+| Insufficient stock عند Confirm/Approve | `409` (موجودة) |
+
+### 11.4 الـ Threshold
+
+- القاعدة: `sameCurrency === false || grandTotal > threshold.value` → Approval إجباري.
+- **`grandTotal === threshold` → Confirm مباشر** (الشرط هو `>` فقط، مش `>=`).
+- **اختلاف العملة → Approval إجباري** حتى لو القيمة الرقمية أقل من الـ threshold.
+- `SystemSettings` (`approvalThresholdValue` / `approvalThresholdCurrency`) هي مصدر القيمة. لو سجل مفتقد أو قيمته غير رقمية صالحة → fallback باسم صريح `DEFAULT_APPROVAL_THRESHOLD = { value: 5000, currency: "EGP" }` + `console.warn`. **القيمة `0` محفوظة** (تعني "كل طلب يمر على موافقة").
+- `db:seed` يعمل create-if-missing فقط للـ settings — **لا يعيد كتابة** قيمة عدّلها المدير يدويًا.
+
+### 11.5 DoD السبعة (Definitions of Done)
+
+| # | DoD | الضمان |
+|---|-----|--------|
+| 1 | لا موافقة مزدوجة | approve مزدوج → واحد 200 + الآخر 409 (Row Lock + status re-check) |
+| 2 | لا حجز مزدوج | parallel confirm/approve → حجز واحد فقط |
+| 3 | لا موافقة على بيانات قديمة | التعديل يوسم الـ approvals بـ `superseded` قبل أي confirm جديد |
+| 4 | لا re-submit بدون تعديل | confirm بعد reject (بدون edit) → 409 |
+| 5 | لا تغيير سعر/تكلفة بعد التجميد | `costPrice`/`sellingPrice` تُجمد عند confirm/approve وتمنع الـ edit بعدها |
+| 6 | لا bypass للـ threshold | عملة مختلفة → موافقة إجبارية؛ `=== threshold` → confirm مباشر |
+| 7 | لا نقص مخزون وقت الموافقة | approve مع مخزون غير كافٍ → 409 + rollback (الطلب draft + approval pending) |
+
+---
+
 ## Appendix: Implementation Phases
 
 | Phase | Scope | Files | Tests |
