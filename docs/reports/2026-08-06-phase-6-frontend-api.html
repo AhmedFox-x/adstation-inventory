@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html dir="rtl" lang="ar">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>تقرير تنفيذي — Phase 6: ربط الواجهة بالخادم (API Layer)</title>
+<style>
+  :root {
+    --red: #DC2626; --red-dark: #B91C1C; --ink: #0d0a08; --paper: #faf7f4;
+    --card: #ffffff; --muted: #6b6660; --border: #e7e1da;
+    --green: #166534; --green-bg: #f0fdf4; --amber-bg: #fffbeb; --amber: #92400e;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: "Segoe UI", Tahoma, Arial, sans-serif; background: var(--paper); color: var(--ink); line-height: 1.7; padding: 40px 16px; }
+  .wrap { max-width: 900px; margin: 0 auto; }
+  header { background: linear-gradient(135deg, var(--ink) 0%, #1a1410 100%); color: #fff; border-radius: 16px; padding: 36px 40px; margin-bottom: 28px; }
+  header .tag { display: inline-block; background: var(--red); color: #fff; font-size: 12px; font-weight: 700; letter-spacing: 0.08em; padding: 4px 12px; border-radius: 999px; margin-bottom: 14px; }
+  header h1 { font-size: 26px; margin-bottom: 8px; }
+  header p { color: #d8d2cb; font-size: 15px; }
+  .meta { display: flex; gap: 24px; flex-wrap: wrap; margin-top: 18px; }
+  .meta div { font-size: 13px; color: #b8b0a7; }
+  .meta b { color: #fff; }
+  h2 { font-size: 20px; margin: 32px 0 14px; padding-right: 12px; border-right: 4px solid var(--red); }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 20px 24px; margin-bottom: 14px; }
+  table { width: 100%; border-collapse: collapse; margin: 12px 0; }
+  th, td { text-align: right; padding: 10px 12px; border-bottom: 1px solid var(--border); font-size: 14px; }
+  th { background: #f4f0eb; font-size: 13px; }
+  .badge { display: inline-block; font-size: 12px; font-weight: 700; padding: 2px 10px; border-radius: 999px; margin-left: 4px; }
+  .b-green { background: var(--green-bg); color: var(--green); }
+  .b-red { background: #fef2f2; color: var(--red-dark); }
+  .success { background: var(--green-bg); border: 1px solid #bbf7d0; }
+  ul { padding-right: 22px; }
+  li { margin-bottom: 6px; font-size: 14px; }
+  .footer { margin-top: 28px; color: var(--muted); font-size: 12px; text-align: center; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <span class="tag">تقرير تنفيذي — P6</span>
+  <h1>طبقة ربط الواجهة بالخادم (API Layer)</h1>
+  <p>تحديث كامل لطبقة الاتصال في الواجهة الأمامية لتتكلم مع أوامر البيع الجديدة والإشعارات.</p>
+  <div class="meta">
+    <div>التاريخ: <b>2026-08-06</b></div>
+    <div>المرحلة: <b>Phase 6</b></div>
+    <div>الحالة: <b>مكتملة</b></div>
+  </div>
+</header>
+
+<h2>1. ملخص تنفيذي</h2>
+<div class="card">
+  <p>قبل هذه المرحلة، كانت الواجهة الأمامية "تتخيل" شكل بيانات أوامر البيع القديمة. تم تحديث طبقة الاتصال بالكامل لتعكس الشكل الفعلي الجديد للخادم: أوامر البيع مع الاعتمادات والتسليمات ورقم الإصدار (للحماية من تعارض التعديلات)، والكميات الموصلة لكل صنف، وقسم الإشعارات الكامل.</p>
+  <p>الهدف: الواجهة والشاشات التي ستبنى عليها تعتمد على بيانات حقيقية دقيقة — بدون أي "حشو مؤقت".</p>
+</div>
+
+<h2>2. قبل / بعد</h2>
+<div class="card">
+  <table>
+    <tr><th>قبل</th><th>بعد</th></tr>
+    <tr><td>أوامر البيع تُرسَل بكميات موصلة بشكل قديم (<code>deliveredQuantities</code>) لا يطابق الخادم.</td><td>الكميات الموصلة تُرسَل لكل صنف بشكل صحيح (<code>deliveredItems</code>).</td></tr>
+    <tr><td>لا يوجد تمثيل للاعتمادات أو التسليمات أو رقم الإصدار.</td><td>الواجهة تعرف <code>approvals</code> و <code>deliveries</code> و <code>version</code> — وتتعامل معها.</td></tr>
+    <tr><td>لا توجد دوال للاعتماد/الرفض أو الإشعارات.</td><td>دوال جديدة: اعتماد، رفض مع سبب، جلب الإشعارات، تعليم كمقروء.</td></tr>
+    <tr><td>تعديل الطلب عبر PATCH بسيط قد يكتب فوق تعديل زميل.</td><td>تعديل بـ PUT مع رقم إصدار متوقع — أي نسخة قديمة تُرفض بـ 409.</td></tr>
+  </table>
+</div>
+
+<h2>3. الملفات</h2>
+<div class="card">
+  <ul>
+    <li><code>src/services/api.ts</code> (الواجهة الأمامية) — واجهات البيانات الجديدة + دوال الاتصال الكاملة.</li>
+    <li>إضافة نوع <code>Notification</code> ودوال الإشعارات الجاهزة للاستخدام.</li>
+  </ul>
+</div>
+
+<h2>4. حالة التحقق</h2>
+<div class="card success">
+  <table>
+    <tr><th>التحقق</th><th>النتيجة</th></tr>
+    <tr><td>تطابق الأسماء والحقول مع الخادم الفعلي (بدون shims)</td><td><span class="badge b-green">تم ✅</span></td></tr>
+    <tr><td>البناء النوعي (TypeScript) للواجهة يمر بدون أخطاء</td><td><span class="badge b-green">تم ✅</span></td></tr>
+  </table>
+</div>
+
+<h2>5. الخطوة الجاية</h2>
+<div class="card">
+  <p>الانتقال إلى <b>Phase 7</b>: بناء شاشات المستخدم الفعلية (أوامر البيع + مركز الإشعارات) بالاعتماد على هذه الطبقة.</p>
+</div>
+
+<div class="footer">AD Station — نظام إدارة المخزون — تقرير Phase 6 — 2026-08-06</div>
+
+</div>
+</body>
+</html>

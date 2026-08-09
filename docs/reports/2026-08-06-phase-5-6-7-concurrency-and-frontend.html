@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html dir="rtl" lang="ar">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>تقرير تنفيذي — Phase 5/6/7: حماية التزامن + واجهة أوامر البيع والإشعارات</title>
+<style>
+  :root {
+    --red: #DC2626;
+    --red-dark: #B91C1C;
+    --ink: #0d0a08;
+    --paper: #faf7f4;
+    --card: #ffffff;
+    --muted: #6b6660;
+    --border: #e7e1da;
+    --green: #166534;
+    --green-bg: #f0fdf4;
+    --amber-bg: #fffbeb;
+    --amber: #92400e;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: "Segoe UI", Tahoma, Arial, sans-serif;
+    background: var(--paper);
+    color: var(--ink);
+    line-height: 1.7;
+    padding: 40px 16px;
+  }
+  .wrap { max-width: 900px; margin: 0 auto; }
+  header {
+    background: linear-gradient(135deg, var(--ink) 0%, #1a1410 100%);
+    color: #fff;
+    border-radius: 16px;
+    padding: 36px 40px;
+    margin-bottom: 28px;
+  }
+  header .tag {
+    display: inline-block;
+    background: var(--red);
+    color: #fff;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    padding: 4px 12px;
+    border-radius: 999px;
+    margin-bottom: 14px;
+  }
+  header h1 { font-size: 26px; margin-bottom: 8px; }
+  header p { color: #d8d2cb; font-size: 15px; }
+  .meta { display: flex; gap: 24px; flex-wrap: wrap; margin-top: 18px; }
+  .meta div { font-size: 13px; color: #b8b0a7; }
+  .meta b { color: #fff; }
+  h2 {
+    font-size: 20px;
+    margin: 32px 0 14px;
+    padding-right: 12px;
+    border-right: 4px solid var(--red);
+  }
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px 24px;
+    margin-bottom: 14px;
+  }
+  table { width: 100%; border-collapse: collapse; margin: 12px 0; }
+  th, td { text-align: right; padding: 10px 12px; border-bottom: 1px solid var(--border); font-size: 14px; }
+  th { background: #f4f0eb; font-size: 13px; }
+  .badge {
+    display: inline-block; font-size: 12px; font-weight: 700;
+    padding: 2px 10px; border-radius: 999px; margin-left: 4px;
+  }
+  .b-green { background: var(--green-bg); color: var(--green); }
+  .b-red { background: #fef2f2; color: var(--red-dark); }
+  .b-amber { background: var(--amber-bg); color: var(--amber); }
+  .success { background: var(--green-bg); border: 1px solid #bbf7d0; }
+  .warn { background: var(--amber-bg); border: 1px solid #fde68a; }
+  ul { padding-right: 22px; }
+  li { margin-bottom: 6px; font-size: 14px; }
+  .footer { margin-top: 28px; color: var(--muted); font-size: 12px; text-align: center; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <span class="tag">تقرير تنفيذي — P5/6/7</span>
+  <h1>حماية التزامن (Race Conditions) + واجهة أوامر البيع ومركز الإشعارات</h1>
+  <p>سدّ ثغرة "تصرفين في نفس اللحظة" في المخزون، وواجهة كاملة للفريق لإدارة أوامر البيع والاعتماد والإشعارات.</p>
+  <div class="meta">
+    <div>التاريخ: <b>2026-08-06</b></div>
+    <div>المرحلة: <b>Phase 5 + 6 + 7</b></div>
+    <div>الحالة: <b>مكتملة ومُختبَرة</b></div>
+  </div>
+</header>
+
+<h2>1. ملخص تنفيذي</h2>
+<div class="card">
+  <p>بعد بناء قلب أوامر البيع (Phase 4)، اكتشفنا أثناء الاختبار ثغرة حقيقية: لو حاول اثنان تأكيد نفس الطلب أو توصيل نفس الكمية <b>في نفس اللحظة</b>، كان ممكن يتخصم من المخزون مرتين أو يُسلَّم أصناف مرتين. تم إصلاح الخلل نهائيًا، وأُضيفت اختبارات تمنع رجوعه.</p>
+  <p>بعدها اكتملت <b>واجهة المستخدم</b>: شاشة أوامر البيع أصبحت كاملة (تعديل، اعتماد، رفض، توصيل جزئي/كامل، عرض كل التفاصيل)، وجرس إشعارات في أعلى الشاشة لجميع الفريق، وصفحة مركز إشعارات كاملة.</p>
+</div>
+
+<h2>2. قبل / بعد</h2>
+<div class="card">
+  <table>
+    <tr><th>الوضع السابق</th><th>الوضع الحالي</th></tr>
+    <tr>
+      <td>عند تأكيد نفس الطلب من جهازين في نفس اللحظة، كان الخادم يقرأ المخزون ثم يعدّله بعد فاصل زمني — فيحجز الكمية مرتين ويخدع الرصيد.</td>
+      <td>الخادم يقرأ البيانات من جديد <b>بعد</b> تأمين الصفوف في قاعدة البيانات، فيُقبل تأكيد واحد فقط ويرفض الثاني برسالة واضحة — لا مضاعفة للحجز ولا للتسليم.</td>
+    </tr>
+    <tr>
+      <td>واجهة أوامر البيع كانت ناقصة: لا تعديل للمسودات، لا اعتماد/رفض للمالك، لا عرض للعمولات والتسليمات، لا معالجة لتعارض التعديلات.</td>
+      <td>شاشة كاملة: تعديل المسودة، موافقة أو رفض الطلبات الكبيرة من المالك مع سبب، توصيل جزئي أو كامل، جدول زمني لكل خطوة، وتنبيه واضح إذا تعارض تعديل اثنين.</td>
+    </tr>
+    <tr>
+      <td>لا يوجد مركز إشعارات في الواجهة — الإشعارات (مثل "طلب كبير يحتاج اعتمادك") كانت تظهر في الخلفية فقط بدون واجهة.</td>
+      <td>جرس إشعارات بعدّاد غير المقروء + صفحة مركز إشعارات تُظهر التفاصيل وتصل مباشرة للطلب المعني.</td>
+    </tr>
+  </table>
+</div>
+
+<h2>3. الأثر على الشغل اليومي</h2>
+<div class="card">
+  <ul>
+    <li><b>كل الفريق:</b> إذا فتح اثنان نفس الطلب وتعدلا معًا، النظام يرفض التعديل الأحدث برسالة واضحة (بدلًا من إفساد البيانات) — يحدّث الصفحة ويحاول تاني.</li>
+    <li><b>للمالك (Owner):</b> من شاشة الطلب نفسها يقدر يعتمد أو يرفض (مع سبب) أي طلب كبير معلّق، بدل ما يعتمد على أي وسيلة خارجية.</li>
+    <li><b>كل المستخدمين:</b> إشعارات غير المقروء تظهر بعدّاد أحمر على الجرس، والنقر يفتح مصدر الإشعار مباشرة.</li>
+    <li>عملية <b>التوصيل</b> أصبحت دقيقة: إدخال الكمية الموصلة لكل صنف، مع تأكيد الخادم ألا تتجاوز المتبقي.</li>
+  </ul>
+</div>
+
+<h2>4. حالة الاختبار</h2>
+<div class="card success">
+  <table>
+    <tr><th>المجموعة</th><th>النتيجة</th></tr>
+    <tr><td>تأكيدان متوازيان لنفس الطلب → تأكيد واحد فقط يحجز، والثاني يُرفض (409) بدون مضاعفة الحجز</td><td><span class="badge b-green">نجحت ✅</span></td></tr>
+    <tr><td>محاولتا توصيل متوازيتان → المخزون ينقص مرة واحدة فقط، ولا توصيل سلبي</td><td><span class="badge b-green">نجحت ✅</span></td></tr>
+    <tr><td>كل اختبارات Phase 4 (دورة كاملة، اعتماد، إلغاء، انتهاء صلاحية، أخطاء متوقعة، صلاحيات)</td><td><span class="badge b-green">نجحت ✅</span></td></tr>
+    <tr><td>بناء واجهة المستخدم (TypeScript + Vite) من غير أخطاء + توليد Service Worker</td><td><span class="badge b-green">نجحت ✅</span></td></tr>
+    <tr><td><b>الإجمالي (Backend)</b></td><td><b>12 مجموعات / 99 / 99 اختبارًا ناجحًا</b></td></tr>
+  </table>
+</div>
+
+<h2>5. ما تم بناؤه (ملفات)</h2>
+<div class="card">
+  <ul>
+    <li><code>src/services/salesOrderService.ts</code> — إصلاح التزامن: إعادة قراءة الحالة والمخزون بعد تأمين الصفوف في عمليتي التأكيد والتوصيل.</li>
+    <li><code>tests/sales-orders/salesOrderService.test.ts</code> — اختباران جديدان للتزامن (22 اختبارًا في المجموعة).</li>
+    <li><b>الواجهة الأمامية:</b> <code>src/services/api.ts</code> (واجهات وتحديثات جديدة)، <code>src/pages/SalesOrdersPage.tsx</code> (إعادة بناء كاملة)، <code>src/pages/NotificationsPage.tsx</code> (جديد)، <code>src/pages/Layout.tsx</code> (جرس + عداد)، <code>src/App.tsx</code> (صفحة الإشعارات)، <code>src/i18n</code> (ترجمة عربي/إنجليزي).</li>
+    <li><code>vite.config.ts</code> — تقسيم الحزم الكبيرة (مكتبات Excel/PDF) حتى لا يتجاوز حاجز خدمة العامل (Service Worker).</li>
+  </ul>
+</div>
+
+<h2>6. الخطوة الجاية</h2>
+<div class="card">
+  <p>الواجهة بُنيت واجتازت الاختبار التقني (البناء). الخطوة التالية: ربط الواجهة بالخادم فعليًا في بيئة العمل والاختبار الشامل اليدوي من جهاز حقيقي، ثم أي بنود P1/P2 التالية في خارطة الطريق.</p>
+</div>
+
+<div class="footer">AD Station — نظام إدارة المخزون — تقرير Phase 5/6/7 — 2026-08-06</div>
+
+</div>
+</body>
+</html>
