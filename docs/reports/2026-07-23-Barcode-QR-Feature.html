@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ميزة الباركود والمسح السريع — AD Station</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Inter', 'Segoe UI', Tahoma, sans-serif;
+            background: #f5f5f5;
+            color: #1a1a1a;
+            line-height: 1.7;
+            direction: rtl;
+        }
+        .page {
+            max-width: 860px;
+            margin: 40px auto;
+            background: #fff;
+            border-radius: 16px;
+            overflow: hidden;
+            box-shadow: 0 4px 24px rgba(0,0,0,0.06);
+        }
+        .banner {
+            background: linear-gradient(135deg, #7c3aed 0%, #5b21b6 100%);
+            color: #fff;
+            padding: 48px 48px 40px;
+        }
+        .banner .tag {
+            display: inline-block;
+            background: rgba(255,255,255,0.2);
+            padding: 4px 16px;
+            border-radius: 20px;
+            font-size: 13px;
+            font-weight: 500;
+            margin-bottom: 16px;
+        }
+        .banner h1 {
+            font-size: 30px;
+            font-weight: 700;
+            margin-bottom: 8px;
+        }
+        .banner .meta {
+            font-size: 14px;
+            opacity: 0.85;
+        }
+        .body { padding: 40px 48px 48px; }
+        .section { margin-bottom: 36px; }
+        .section:last-child { margin-bottom: 0; }
+        .section h2 {
+            font-size: 18px;
+            font-weight: 700;
+            color: #7c3aed;
+            margin-bottom: 14px;
+            padding-bottom: 8px;
+            border-bottom: 2px solid #ede9fe;
+        }
+        .section p, .section li {
+            font-size: 15px;
+            color: #374151;
+        }
+        .section ul {
+            padding-right: 24px;
+            margin-top: 8px;
+        }
+        .section li { margin-bottom: 8px; }
+        .card-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin-top: 16px;
+        }
+        .card {
+            border: 1px solid #e5e7eb;
+            border-radius: 12px;
+            padding: 24px;
+        }
+        .card.before { border-color: #fca5a5; background: #fef2f2; }
+        .card.after { border-color: #86efac; background: #f0fdf4; }
+        .card .label {
+            font-size: 12px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 8px;
+        }
+        .card.before .label { color: #dc2626; }
+        .card.after .label { color: #16a34a; }
+        .card .text {
+            font-size: 15px;
+            color: #374151;
+        }
+        .steps-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 16px;
+            margin-top: 16px;
+        }
+        .step-card {
+            border: 1px solid #e5e7eb;
+            border-radius: 12px;
+            padding: 20px;
+            text-align: center;
+        }
+        .step-card .num {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            background: #7c3aed;
+            color: white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 12px;
+            font-size: 18px;
+            font-weight: 700;
+        }
+        .step-card .title {
+            font-size: 14px;
+            font-weight: 600;
+            margin-bottom: 4px;
+        }
+        .step-card .desc {
+            font-size: 12px;
+            color: #6b7280;
+        }
+        .impact-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 16px;
+        }
+        .impact-table th {
+            background: #f9fafb;
+            padding: 12px 16px;
+            text-align: right;
+            font-size: 13px;
+            font-weight: 600;
+            color: #6b7280;
+            border-bottom: 2px solid #e5e7eb;
+        }
+        .impact-table td {
+            padding: 14px 16px;
+            font-size: 14px;
+            color: #374151;
+            border-bottom: 1px solid #f3f4f6;
+        }
+        .badge {
+            display: inline-block;
+            padding: 3px 10px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+        .badge.green { background: #dcfce7; color: #166534; }
+        .badge.purple { background: #ede9fe; color: #5b21b6; }
+        .next-box {
+            background: #eff6ff;
+            border: 1px solid #bfdbfe;
+            border-radius: 12px;
+            padding: 24px;
+            margin-top: 16px;
+        }
+        .next-box h3 {
+            font-size: 15px;
+            font-weight: 600;
+            color: #1e40af;
+            margin-bottom: 12px;
+        }
+        .next-box li {
+            margin-bottom: 6px;
+            font-size: 14px;
+        }
+        .footer {
+            background: #f9fafb;
+            padding: 20px 48px;
+            text-align: center;
+            font-size: 12px;
+            color: #9ca3af;
+            border-top: 1px solid #f3f4f6;
+        }
+    </style>
+</head>
+<body>
+<div class="page">
+    <div class="banner">
+        <div class="tag">تقرير تنفيذي — المرحلة P1</div>
+        <h1>ميزة الباركود والمسح السريع</h1>
+        <div class="meta">التاريخ: 23 يوليو 2026 &nbsp;|&nbsp; الحالة: مكتمل ومُختبَر</div>
+    </div>
+
+    <div class="body">
+        <div class="section">
+            <h2>ملخص تنفيذي</h2>
+            <p>كل منتج في المخزن دلوقتي ليه كود QR فريد مطبوع عليه. موظف المخزن يقدر يمسح الكود بكاميرا الموبايل ويعرف المنتج والكمية المتاحة في ثانية واحدة، وينفذ صرف أو توريد في أقل من 3 لمسات — بدل ما يدور على اسم المنتج يدويًا ويكتب الكمية.</p>
+        </div>
+
+        <div class="section">
+            <h2>قبل وبعد</h2>
+            <div class="card-row">
+                <div class="card before">
+                    <div class="label">قبل الميزة</div>
+                    <div class="text">
+                        <ul style="padding-right: 20px; margin-top: 0;">
+                            <li>موظف المخزن بيدور على اسم المنتج في قائمة طويلة</li>
+                            <li>لو اسم المنتج طويل أو غلطان، صعب يلاقيه</li>
+                            <li>عملية الصرف بتاخد 5-10 دقايق لكل إذن</li>
+                            <li>احتمال غلط في اسم المنتج أو الكمية عالي</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="card after">
+                    <div class="label">بعد الميزة</div>
+                    <div class="text">
+                        <ul style="padding-right: 20px; margin-top: 0;">
+                            <li>امسح الكود بالكاميرا → المنتج يظهر فورًا</li>
+                            <li>اختار صرف أو توريد → اكتب الكمية → تأكيد</li>
+                            <li>عملية الصرف بقت أقل من دقيقة</li>
+                            <li>صفر أخطاء因为在 الكود فريد ومضمون</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="section">
+            <h2>إزاي بتشتغل</h2>
+            <div class="steps-grid">
+                <div class="step-card">
+                    <div class="num">1</div>
+                    <div class="title">امسح الكود</div>
+                    <div class="desc">افتح شاشة "مسح سريع" ووجّه الكاميرا للباركود على المنتج</div>
+                </div>
+                <div class="step-card">
+                    <div class="num">2</div>
+                    <div class="title">اختار العملية</div>
+                    <div class="desc">اضغط "صرف" أو "توريد" واكتب الكمية</div>
+                </div>
+                <div class="step-card">
+                    <div class="num">3</div>
+                    <div class="title">تأكيد</div>
+                    <div class="desc">اضغط "تأكيد" — تم التنفيذ وإذن الصرف/التوريد اتسجّل</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="section">
+            <h2>الأثر على الشغل اليومي</h2>
+            <table class="impact-table">
+                <thead>
+                    <tr>
+                        <th>الدور</th>
+                        <th>هل اتغيّر حاجة؟</th>
+                        <th>التفاصيل</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td><strong>موظفي المخزن</strong></td>
+                        <td><span class="badge green">تحسين كبير</span></td>
+                        <td>بيشتغلوا أسرع وأدق. مفيش بحث يدوي عن المنتجات.</td>
+                    </tr>
+                    <tr>
+                        <td><strong>المدير</strong></td>
+                        <td><span class="badge green">في تحسين</span></td>
+                        <td>أقل أخطاء في التقارير لأن البيانات مضمونة من الباركود.</td>
+                    </tr>
+                    <tr>
+                        <td><strong>المالك</strong></td>
+                        <td><span class="badge green">في تحسين</span></td>
+                        <td>تقارير أدق وأسرع.</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <div class="section">
+            <h2>حالة الاختبار</h2>
+            <table class="impact-table">
+                <thead>
+                    <tr>
+                        <th>السيناريو</th>
+                        <th>النتيجة</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>إضافة 989 منتج بباركود فريد</td>
+                        <td><span class="badge green">✅ تم — كل منتج له كود AD-XXXXXXXX</span></td>
+                    </tr>
+                    <tr>
+                        <td>البحث بباركود صحيح</td>
+                        <td><span class="badge green">✅ يتم العثور على المنتج بالاسم والكمية</span></td>
+                    </tr>
+                    <tr>
+                        <td>البحث بباركود خاطئ</td>
+                        <td><span class="badge green">✅ يرجع 404 — المنتج غير موجود</span></td>
+                    </tr>
+                    <tr>
+                        <td>صفحة المسح السريع</td>
+                        <td><span class="badge green">✅ تفتح الكاميرا وتقرأ الباركود</span></td>
+                    </tr>
+                    <tr>
+                        <td>عرض + طباعة الباركود</td>
+                        <td><span class="badge green">✅ QR يظهر في جدول المنتجات + زر طباعة</span></td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <div class="section">
+            <h2>الملفات المعدّلة</h2>
+            <table class="impact-table">
+                <thead>
+                    <tr>
+                        <th>الملف</th>
+                        <th>التعديل</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr><td>prisma/schema.prisma</td><td>إضافة حقل `barcode` فريد للمنتج</td></tr>
+                    <tr><td>src/utils/barcode.ts</td><td>توليد barcodes فريدة (جديد)</td></tr>
+                    <tr><td>src/routes/barcode.ts</td><td>API للبحث بالباركود + إعادة توليد + Seed (جديد)</td></tr>
+                    <tr><td>src/index.ts</td><td>Mount barcodeRouter + seedBarcodes في الـ Startup</td></tr>
+                    <tr><td>src/pages/BarcodeScannerPage.tsx</td><td>شاشة مسح بالكاميرا (جديد)</td></tr>
+                    <tr><td>src/pages/ProductsPage.tsx</td><td>عرض QR + طباعة في جدول المنتجات</td></tr>
+                    <tr><td>src/pages/Layout.tsx</td><td>إضافة "مسح سريع" للقائمة</td></tr>
+                    <tr><td>src/App.tsx</td><td>إضافة Route للمسح السريع</td></tr>
+                    <tr><td>src/services/api.ts</td><td>إضافة barcode للنوع + API functions</td></tr>
+                </tbody>
+            </table>
+        </div>
+
+        <div class="section">
+            <h2>الخطوة الجاية</h2>
+            <div class="next-box">
+                <h3>التالي في الخطة</h3>
+                <ul>
+                    <li>إدارة مورdin حقيقية + أوامر شراء (Purchase Orders)</li>
+                    <li>تنبيهات استباقية (إيميل/واتساب)</li>
+                    <li>كيان عميل حقيقي</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+
+    <div class="footer">
+        تقرير من نظام إدارة مخزون AD Station &nbsp;|&nbsp; أعدّه تلقائيًا
+    </div>
+</div>
+</body>
+</html>

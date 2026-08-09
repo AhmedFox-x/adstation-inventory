@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>تقرير تنفيذي — تنبيهات المخزون + كيان العملاء</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: 'Segoe UI', Tahoma, Arial, sans-serif; background: #f8f9fa; color: #111; line-height: 1.6; }
+    .container { max-width: 900px; margin: 40px auto; background: white; border-radius: 12px; box-shadow: 0 4px 24px rgba(0,0,0,0.08); overflow: hidden; }
+    .header { background: linear-gradient(135deg, #2563eb 0%, #1e40af 100%); color: white; padding: 32px 40px; display: flex; align-items: center; justify-content: space-between; }
+    .header h1 { font-size: 22px; font-weight: 700; }
+    .header .meta { font-size: 13px; opacity: 0.85; text-align: left; }
+    .body { padding: 32px 40px; }
+    .section { margin-bottom: 28px; }
+    .section-title { font-size: 16px; font-weight: 700; color: #2563eb; margin-bottom: 12px; padding-bottom: 6px; border-bottom: 2px solid #dbeafe; }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 20px; }
+    .card { background: #f8f9fa; border: 1px solid #e5e7eb; border-radius: 8px; padding: 16px; }
+    .card h3 { font-size: 12px; color: #6b7280; margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.5px; }
+    .card .value { font-size: 28px; font-weight: 700; color: #111; }
+    .card .value.red { color: #dc2626; }
+    .card .value.green { color: #059669; }
+    .card .value.blue { color: #2563eb; }
+    .card .value.amber { color: #d97706; }
+    .feature-box { background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 8px; padding: 20px; margin-bottom: 20px; }
+    .feature-box h3 { color: #1e40af; margin-bottom: 8px; font-size: 15px; }
+    .feature-box ul { list-style: none; padding: 0; }
+    .feature-box li { padding: 6px 0; font-size: 13px; color: #374151; display: flex; align-items: flex-start; gap: 8px; }
+    .feature-box li::before { content: '✅'; flex-shrink: 0; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th { background: #f3f4f6; padding: 8px 12px; text-align: right; font-weight: 600; border-bottom: 2px solid #e5e7eb; }
+    td { padding: 8px 12px; border-bottom: 1px solid #f3f4f6; }
+    .next-steps { background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; padding: 16px; }
+    .next-steps h3 { color: #166534; margin-bottom: 8px; }
+    .footer { padding: 16px 40px; background: #f8f9fa; border-top: 1px solid #e5e7eb; text-align: center; font-size: 11px; color: #9ca3af; }
+    @media print { .container { box-shadow: none; } }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <div>
+        <h1>تنبيهات المخزون + كيان العملاء</h1>
+        <p style="margin-top: 4px; opacity: 0.9;">تقرير تنفيذي — P1.7 + P1.8</p>
+      </div>
+      <div class="meta">
+        <div>23 يوليو 2026</div>
+        <div>AD Station Inventory System</div>
+      </div>
+    </div>
+
+    <div class="body">
+      <!-- Executive Summary -->
+      <div class="section">
+        <h2 class="section-title">ملخص تنفيذي</h2>
+        <p>تم تنفيذ ميزتين أساسيتين مع بعض: (1) نظام تنبيهات إلكتروني يبعت إيميل فوري لما أي منتج يوصل أو يقل عن الحد الأدنى — مش محتاج حد يفتح الداشبورد عشان يعرف، و(2) كيان "عميل" حقيقي بدل النص الحر — كل عميل ليه ملف ثابت وكل إذن صرف مربوط بيه. الميزتين مع بعض بيخلي التتبع أقوى والمسؤولية أوضح.</p>
+      </div>
+
+      <!-- Stats -->
+      <div class="grid">
+        <div class="card">
+          <h3>العملاء المسجلين</h3>
+          <div class="value blue">1 (مستورد)</div>
+        </div>
+        <div class="card">
+          <h3>المنتجات المنخفضة (تم كشفها)</h3>
+          <div class="value red">987</div>
+        </div>
+        <div class="card">
+          <h3>الصلاحيات الجديدة</h3>
+          <div class="value green">4</div>
+        </div>
+        <div class="card">
+          <h3>النماذج الجديدة</h3>
+          <div class="value amber">1 (Client)</div>
+        </div>
+      </div>
+
+      <!-- P1.7 Alert Feature -->
+      <div class="feature-box">
+        <h3>P1.7 — نظام التنبيهات الإلكترونية</h3>
+        <ul>
+          <li>يتحقق تلقائيًا من المخزون بعد كل عملية صرف</li>
+          <li>لو أي منتج وصل أو تحت الحد الأدنى → إيميل HTML احترافي بالعربي</li>
+          <li>الإيميل فيه جدول بالمنتج المنخفض + الكمية + الحد الأدنى + التصنيف</li>
+          <li>يعمل مع أي مزود SMTP (Gmail, Outlook, Mailgun, إلخ)</li>
+          <li>غير عامل — الإرسال fire-and-forget مش بيمنع عملية الصرف</li>
+          <li>فحص يدوي متاح عبر API للاختبار</li>
+        </ul>
+      </div>
+
+      <!-- P1.8 Client Feature -->
+      <div class="feature-box">
+        <h3>P1.8 — كيان العميل الحقيقي</h3>
+        <ul>
+          <li>نموذج Client كامل (اسم، تليفون، بريد، عنوان، ملاحظات، حالة)</li>
+          <li>كل إذن صرف مربوط بعميل (FK في قاعدة البيانات)</li>
+          <li>استيراد تلقائي للعملاء الحاليين من أذونات الصرف السابقة</li>
+          <li>شاشة عملاء كاملة (CRUD + بحث + تفاصيل)</li>
+          <li>شاشة الصرف فيها dropdown للعميل + خيار اسم حر</li>
+          <li>4 صلاحيات جديدة (عرض/إنشاء/تعديل/حذف)</li>
+        </ul>
+      </div>
+
+      <!-- Before/After -->
+      <div class="section">
+        <h2 class="section-title">قبل / بعد</h2>
+        <table>
+          <thead><tr><th>الجانب</th><th>قبل</th><th>بعد</th></tr></thead>
+          <tbody>
+            <tr>
+              <td><strong>تنبيه المخزون</strong></td>
+              <td>مفيش — لازم حد يفتح الداشبورد بنفسه</td>
+              <td>إيميل تلقائي فوري لما منتج يوصل للحد الأدنى</td>
+            </tr>
+            <tr>
+              <td><strong>بيانات العميل</strong></td>
+              <td>حقل نصي حر — "Manual" بالتعريف</td>
+              <td>كيان مستقل ببيانات ثابتة + ربط بأذونات الصرف</td>
+            </tr>
+            <tr>
+              <td><strong>صرف يدوي</strong></td>
+              <td>العميل دائمًا "Manual" — مفيش تتبع</td>
+              <td>dropdown للعملاء المسجلين + اسم حر لو العميل جديد</td>
+            </tr>
+            <tr>
+              <td><strong>الصلاحيات</strong></td>
+              <td>24 للملك / 17 للمدير</td>
+              <td>28 للملك / 20 للمدير (+clients +alerts)</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Test Results -->
+      <div class="section">
+        <h2 class="section-title">حالة الاختبار</h2>
+        <div class="grid">
+          <div class="card">
+            <h3>استيراد العملاء</h3>
+            <div class="value green" style="font-size: 18px">✅ 1 عميل</div>
+          </div>
+          <div class="card">
+            <h3>شاشة العملاء</h3>
+            <div class="value green" style="font-size: 18px">✅ CRUD كامل</div>
+          </div>
+          <div class="card">
+            <h3>dropdown في الصرف</h3>
+            <div class="value green" style="font-size: 18px">✅ يظهر العملاء</div>
+          </div>
+          <div class="card">
+            <h3>فحص التنبيهات</h3>
+            <div class="value green" style="font-size: 18px">✅ 987 منتج كُشف</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Next Steps -->
+      <div class="next-steps">
+        <h3>الخطوة الجاية</h3>
+        <p style="font-size: 14px; color: #374151;">P1.9 — استيراد/تصدير CSV عام (Self-Service) — شاشة عامة لرفع ملف Excel/CSV وإضافة/تحديث المنتجات بدون تدخل برمجي.</p>
+      </div>
+    </div>
+
+    <div class="footer">
+      AD Station — Inventory Management System — تقرير تنفيذي — 23 يوليو 2026
+    </div>
+  </div>
+</body>
+</html>
