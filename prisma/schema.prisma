@@ -51,6 +51,7 @@ model Product {
   unit      String   @default("قطعة")
   stock          Int      @default(0)
   reservedStock  Int      @default(0)
+  quarantineStock Int    @default(0)
   minStock       Int      @default(5)
   sku            String?  @unique
   barcode        String?  @unique
@@ -68,6 +69,7 @@ model Product {
   salesItems       SalesOrderItem[]
   reservations     Reservation[]
   deliveryItems    SalesDeliveryItem[]
+  returnItems      ReturnOrderItem[]
 }
 
 model Reservation {
@@ -456,4 +458,101 @@ model Notification {
   createdAt       DateTime  @default(now())
 
   @@index([userId, isRead, createdAt])
+}
+
+model ReturnOrder {
+  id                  String   @id @default(cuid())
+  returnNumber        String   @unique
+  type                String
+  sourceType          String
+  sourceId            String
+  sourceNumber        String?
+  partyId             String?
+  partyName           String?
+  status              String   @default("draft")
+  warehouseDestination String  @default("returns")
+  subtotal            Float?   @default(0)
+  refundAmount        Float?   @default(0)
+  currency            String   @default("EGP")
+  notes               String?
+  images              Json?
+
+  createdBy           String?
+  approvedBy          String?
+  approvedAt          DateTime?
+  rejectedBy          String?
+  rejectedAt          DateTime?
+  rejectionReason     String?
+  receivedBy          String?
+  receivedAt          DateTime?
+  closedBy            String?
+  closedAt            DateTime?
+
+  refundStatus        String   @default("none")
+  refundDate          DateTime?
+  refundNote          String?
+  refundDueAt         DateTime?
+  resolution          String?
+  replacementOrderId  String?
+
+  version             Int      @default(1)
+  deletedAt           DateTime?
+  deletedBy           String?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  items        ReturnOrderItem[]
+  statusHistory ReturnOrderStatusHistory[]
+
+  @@index([status, createdAt])
+  @@index([type])
+  @@index([sourceType, sourceId])
+  @@index([partyId])
+  @@index([createdBy])
+}
+
+model ReturnOrderItem {
+  id           String  @id @default(cuid())
+  returnId     String
+  sourceItemId String?
+  productId    String
+  productName  String?
+  productSku   String?
+  unit         String?
+  condition    String
+  reason       String
+  returnedQty  Int
+  receivedQty  Int     @default(0)
+  unitPrice    Float?  @default(0)
+  totalPrice   Float?  @default(0)
+  imageBefore  String?
+  imageAfter   String?
+  notes        String?
+
+  returnOrder ReturnOrder @relation(fields: [returnId], references: [id], onDelete: Cascade)
+  product     Product     @relation(fields: [productId], references: [id])
+
+  @@index([returnId])
+  @@index([productId])
+  @@index([sourceItemId])
+}
+
+model ReturnOrderStatusHistory {
+  id            String   @id @default(cuid())
+  returnId      String
+  fromStatus    String?
+  toStatus      String
+  changedBy     String?
+  note          String?
+  ip            String?
+  userAgent     String?
+  beforeState   Json?
+  afterState    Json?
+  changedFields String[]
+  createdAt     DateTime @default(now())
+
+  returnOrder ReturnOrder @relation(fields: [returnId], references: [id], onDelete: Cascade)
+
+  @@index([returnId, createdAt])
+  @@index([returnId])
 }

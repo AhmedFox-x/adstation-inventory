@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html dir="rtl" lang="ar">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>تقرير تنفيذي — Phase 8: نظام المرتجعات</title>
+<style>
+  :root {
+    --red: #DC2626; --red-dark: #B91C1C; --ink: #0d0a08; --paper: #faf7f4;
+    --card: #ffffff; --muted: #6b6660; --border: #e7e1da;
+    --green: #166534; --green-bg: #f0fdf4; --amber-bg: #fffbeb; --amber: #92400e;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: "Segoe UI", Tahoma, Arial, sans-serif; background: var(--paper); color: var(--ink); line-height: 1.7; padding: 40px 16px; }
+  .wrap { max-width: 900px; margin: 0 auto; }
+  header { background: linear-gradient(135deg, var(--ink) 0%, #1a1410 100%); color: #fff; border-radius: 16px; padding: 36px 40px; margin-bottom: 28px; }
+  header .tag { display: inline-block; background: var(--red); color: #fff; font-size: 12px; font-weight: 700; letter-spacing: 0.08em; padding: 4px 12px; border-radius: 999px; margin-bottom: 14px; }
+  header h1 { font-size: 26px; margin-bottom: 8px; }
+  header p { color: #d8d2cb; font-size: 15px; }
+  .meta { display: flex; gap: 24px; flex-wrap: wrap; margin-top: 18px; }
+  .meta div { font-size: 13px; color: #b8b0a7; }
+  .meta b { color: #fff; }
+  h2 { font-size: 20px; margin: 32px 0 14px; padding-right: 12px; border-right: 4px solid var(--red); }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 20px 24px; margin-bottom: 14px; }
+  table { width: 100%; border-collapse: collapse; margin: 12px 0; }
+  th, td { text-align: right; padding: 10px 12px; border-bottom: 1px solid var(--border); font-size: 14px; }
+  th { background: #f4f0eb; font-size: 13px; }
+  .badge { display: inline-block; font-size: 12px; font-weight: 700; padding: 2px 10px; border-radius: 999px; margin-left: 4px; }
+  .b-green { background: var(--green-bg); color: var(--green); }
+  .b-amber { background: var(--amber-bg); color: var(--amber); }
+  .success { background: var(--green-bg); border: 1px solid #bbf7d0; }
+  ul { padding-right: 22px; }
+  li { margin-bottom: 6px; font-size: 14px; }
+  code { background: #f4f0eb; padding: 1px 6px; border-radius: 6px; font-size: 13px; }
+  .footer { margin-top: 28px; color: var(--muted); font-size: 12px; text-align: center; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <span class="tag">تقرير تنفيذي — P8</span>
+  <h1>نظام المرتجعات الكامل (Returns Management)</h1>
+  <p>مرتجعات العملاء والموردين بدورة حياة كاملة — من الإنشاء حتى الاستلام والرد المالي — بالعربي والإنجليزي.</p>
+  <div class="meta">
+    <div>التاريخ: <b>2026-08-09</b></div>
+    <div>المرحلة: <b>Phase 8</b></div>
+    <div>الحالة: <b>مكتملة (142 اختبار ناجح + بناء ناجح)</b></div>
+  </div>
+</header>
+
+<h2>1. ملخص تنفيذي</h2>
+<div class="card">
+  <p>أصبحت مرتجعات المخزون عملية مكتوبة وموثقة بالكامل: العميل يرجع أصنافًا (أو نرجع أصنافًا لمورد)، فيُسجَّل المرتجع ببياناته وحالته وسببه، ثم يمر بمراحل واضحة (اعتماد ← استلام فعلي ← رد مالي ← إقفال).</p>
+  <p>الهدف الحقيقي: أي صنف يخرج أو يرجع ليه أثر مكتوب ومحدد من مين وإمتى — فمفيش "صنف اتضاع في الهوا" ولا نقاش في أرقام المخزون وقت أي خلاف مع عميل أو مورد.</p>
+</div>
+
+<h2>2. قبل / بعد</h2>
+<div class="card">
+  <table>
+    <tr><th>قبل</th><th>بعد</th></tr>
+    <tr><td>المرتجع من عميل أو لمورد مفيش له نظام: الراجعين بيتسجلوا شفويًا أو على ورق، ومفيش أثر موثق.</td><td>مرتجع برقم تسلسلي، بأصنافه وكمياته وسبب رجوعه وحالة كل صنف، وسجل كامل بكل خطوة ومين نفذها.</td></tr>
+    <tr><td>مفيش تمييز بين راجعين سليم وراجعين تالف.</td><td>الأصناف السليمة ترجع للمخزون الرئيسي/مخزن المرتجعات، والتالف يُحجَز (Quarantine) لوحده ولا يختلط بالسليم.</td></tr>
+    <tr><td>المبالغ اللي المفروض تترد للعميل أو تترد لنا من المورد مالهاش حساب.</td><td>حالة رد مالي (مستحق / جزئي / مكتمل) لكل مرتجع، مع تنبيه تلقائي لو تأخر الرد عن موعده.</td></tr>
+    <tr><td>مفيش ربط بين المرتجع وأمر البيع الأصلي.</td><td>كل أمر بيع بيظهر فيه الكمية اللي رجعت والكمية الصافية اللي اتسلمت فعلًا — الصورة الكاملة في شاشة واحدة.</td></tr>
+    <tr><td>أي حد عنده صلاحية تعديل يقدر يغيّر الأرقام بلا محاسبة.</td><td>الاعتماد والرفض وتسجيل الرد المالي = المالك فقط؛ والإقفال النهائي موثق.</td></tr>
+  </table>
+</div>
+
+<h2>3. الأثر على الشغل اليومي</h2>
+<div class="card">
+  <ul>
+    <li><b>للفريق التشغيلي (المدير):</b> ينشئ المرتجع، يستلمه فعليًا بالكميات الدقيقة لكل صنف، ويقفل الملفات الجاهزة.</li>
+    <li><b>للمالك:</b> يعتمد أو يرفض أي مرتجع، ويسجّل الرد المالي — القرارات المالية والحاسمة في إيده وحدها.</li>
+    <li><b>للمتابع:</b> يرى كل شيء (المخزون، المرتجعات، التقارير) بدون أي قدرة على التعديل.</li>
+    <li><b>شاشة رئيسية جديدة:</b> لوحة مرتجعات فيها نسبة المرتجعات، حجم المحجوز تالف، وعدد المبالغ المستحقة الرد — والمؤشرات دي ظهرت كمان في الصفحة الرئيسية.</li>
+    <li><b>الإشعارات:</b> المالك بيتنبه فورًا لأي مرتجع محتاج اعتماد أو رد متأخر.</li>
+  </ul>
+</div>
+
+<h2>4. حالة الاختبار</h2>
+<div class="card success">
+  <table>
+    <tr><th>التحقق</th><th>النتيجة</th></tr>
+    <tr><td>اختبارات الخادم للمرتجعات (23 اختبارًا)</td><td><span class="badge b-green">23/23 نجحت ✅</span></td></tr>
+    <tr><td>السويت الكامل (13 مجموعات اختبار — منتجات، أذونات، أوامر بيع، أوامر شراء، مرتجعات، صلاحيات، …)</td><td><span class="badge b-green">142/142 نجحت ✅</span></td></tr>
+    <tr><td>الصلاحيات: Positive (المالك ينفذ 200) + Negative (المدير/المتابع 403)</td><td><span class="badge b-green">نجحت ✅</span></td></tr>
+    <tr><td>الاتساق عند التوصيل المتوازي (منع سباق البيانات)</td><td><span class="badge b-green">6/6 في اختبار الإجهاد ✅</span></td></tr>
+    <tr><td>بناء الواجهة (TypeScript + Vite) بدون أخطاء</td><td><span class="badge b-green">نجح ✅</span></td></tr>
+  </table>
+  <p style="margin-top:10px; font-size:14px;">ملاحظة: البناء التقني مكتمل ومختبَر آليًا؛ الاختبار اليدوي المباشر من جهاز حقيقي (E2E) هو الخطوة التالية قبل الإطلاق.</p>
+</div>
+
+<h2>5. الملفات</h2>
+<div class="card">
+  <ul>
+    <li><code>prisma/schema.prisma</code> + migration <code>20260807204935_returns_management</code> — جداول المرتجعات وبنودها وتاريخ حالاتها وإشعاراتها.</li>
+    <li><code>src/services/returnsService.ts</code> — منطق المرتجعات كامل (إنشاء/اعتماد/استلام/رد/إقفال/أرشفة + لوحة المؤشرات).</li>
+    <li><code>src/routes/returns.ts</code> — 12 نقطة API كلها محمية بالصلاحيات.</li>
+    <li><code>src/utils/permissions.ts</code> + <code>seedRoles</code> — 7 صلاحيات <code>returns.*</code> بتمييز المالك عن المدير عن المتابع.</li>
+    <li><code>src/pages/ReturnsPage.tsx</code> — شاشة المرتجعات الكاملة (جديد).</li>
+    <li><code>src/services/api.ts</code> + <code>src/i18n/ar.ts</code> + <code>en.ts</code> — الاتصال والترجمة.</li>
+    <li><code>src/pages/Layout.tsx</code> / <code>SalesOrdersPage.tsx</code> / <code>DashboardPage.tsx</code> / <code>NotificationsPage.tsx</code> — ربط المرتجعات في كل النظام.</li>
+    <li><code>tests/returns/returnsService.test.ts</code> — 23 اختبارًا، و<code>tests/schema/helpers.ts</code> يشمل migration المرتجعات.</li>
+  </ul>
+</div>
+
+<h2>6. الخطوة الجاية</h2>
+<div class="card">
+  <p>اختبار شامل يدوي (E2E) على بيئة العمل: سيناريو مرتجع عميل تالف → اعتماد → حجز → رد مالي → إقفال، وتأكيد انعكاس الأرقام على أمر البيع والمخزون والتقرير، ثم النشر للإنتاج.</p>
+</div>
+
+<div class="footer">AD Station — نظام إدارة المخزون — تقرير Phase 8 — 2026-08-09</div>
+
+</div>
+</body>
+</html>

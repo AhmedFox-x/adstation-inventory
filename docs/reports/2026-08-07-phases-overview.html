@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html dir="rtl" lang="ar">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>فهرس تقارير مراحل المشروع — AD Station</title>
+<style>
+  :root {
+    --red: #DC2626; --red-dark: #B91C1C; --ink: #0d0a08; --paper: #faf7f4;
+    --card: #ffffff; --muted: #6b6660; --border: #e7e1da;
+    --green: #166534; --green-bg: #f0fdf4; --amber-bg: #fffbeb; --amber: #92400e;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: "Segoe UI", Tahoma, Arial, sans-serif; background: var(--paper); color: var(--ink); line-height: 1.7; padding: 40px 16px; }
+  .wrap { max-width: 920px; margin: 0 auto; }
+  header { background: linear-gradient(135deg, var(--ink) 0%, #1a1410 100%); color: #fff; border-radius: 16px; padding: 36px 40px; margin-bottom: 28px; }
+  header .tag { display: inline-block; background: var(--red); color: #fff; font-size: 12px; font-weight: 700; letter-spacing: 0.08em; padding: 4px 12px; border-radius: 999px; margin-bottom: 14px; }
+  header h1 { font-size: 26px; margin-bottom: 8px; }
+  header p { color: #d8d2cb; font-size: 15px; }
+  h2 { font-size: 20px; margin: 32px 0 14px; padding-right: 12px; border-right: 4px solid var(--red); }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 20px 24px; margin-bottom: 14px; }
+  table { width: 100%; border-collapse: collapse; margin: 12px 0; }
+  th, td { text-align: right; padding: 12px; border-bottom: 1px solid var(--border); font-size: 14px; vertical-align: top; }
+  th { background: #f4f0eb; font-size: 13px; }
+  .phase { font-weight: 700; white-space: nowrap; }
+  .p0 { color: var(--red); }
+  a { color: var(--red); text-decoration: none; font-weight: 600; }
+  a:hover { text-decoration: underline; }
+  .badge { display: inline-block; font-size: 12px; font-weight: 700; padding: 2px 10px; border-radius: 999px; }
+  .b-green { background: var(--green-bg); color: var(--green); }
+  .b-amber { background: var(--amber-bg); color: var(--amber); }
+  .footer { margin-top: 28px; color: var(--muted); font-size: 12px; text-align: center; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <span class="tag">فهرس التقارير</span>
+  <h1>تقارير مراحل مشروع نظام إدارة المخزون (P0 → P8)</h1>
+  <p>كل تقرير مرحلة قابل للعرض مباشرة في أي اجتماع — اضغط على اسم المرحلة لفتح تقريرها.</p>
+</header>
+
+<h2>خريطة المراحل</h2>
+<div class="card">
+  <table>
+    <tr>
+      <th>المرحلة</th>
+      <th>الموضوع</th>
+      <th>الملخص</th>
+      <th>الحالة</th>
+    </tr>
+    <tr>
+      <td class="phase p0">P0</td>
+      <td><a href="2026-07-31-phase-0-core-inventory.html">أساس نظام المخزون</a></td>
+      <td>المنتجات، المخزون، التصاريح، الجرد، سجل الحركة، الموردون وأوامر الشراء، المسح السريع، أدوات التشغيل.</td>
+      <td><span class="badge b-green">مكتملة</span></td>
+    </tr>
+    <tr>
+      <td class="phase">P1</td>
+      <td><a href="2026-07-31-phase-1-rbac.html">تفعيل نظام الصلاحيات (RBAC)</a></td>
+      <td>كل شاشة محمية بصلاحية، فصل العمليات العادية عن الاعتمادات النهائية، حذف الصلاحيات غير المستخدمة.</td>
+      <td><span class="badge b-green">مكتملة</span></td>
+    </tr>
+    <tr>
+      <td class="phase">P2</td>
+      <td><a href="2026-08-02-phase-2-schema-sales-orders.html">بنية أوامر البيع (Schema)</a></td>
+      <td>جداول أوامر البيع والاعتمادات والحجوزات والإشعارات والتسليمات — كهجرات قاعدة بيانات رسمية.</td>
+      <td><span class="badge b-green">مكتملة</span></td>
+    </tr>
+    <tr>
+      <td class="phase">P3</td>
+      <td><a href="2026-08-02-phase-3-permissions-seed.html">Seed الصلاحيات الجديدة</a></td>
+      <td>تحديث الأدوار بصلاحيات أوامر البيع (owner=50 / manager=41 / viewer=5) وتطبيقها على الإنتاج.</td>
+      <td><span class="badge b-green">مكتملة</span></td>
+    </tr>
+    <tr>
+      <td class="phase">P4</td>
+      <td><a href="2026-08-06-phase-4-sales-orders-backend.html">منطق أوامر البيع (Backend)</a></td>
+      <td>دورة حياة كاملة (مسودة → تأكيد → تجهيز → شحن → توصيل → إغلاق)، بوابة اعتماد، إشعارات، انتهاء صلاحية.</td>
+      <td><span class="badge b-green">مكتملة</span></td>
+    </tr>
+    <tr>
+      <td class="phase">P5</td>
+      <td><a href="2026-08-06-phase-5-concurrency.html">حماية التزامن (Race Conditions)</a></td>
+      <td>إصلاح مضاعفة الخصم/التسليم عند العمليات المتوازية + اختبارات تمنع رجوعها.</td>
+      <td><span class="badge b-green">مكتملة</span></td>
+    </tr>
+    <tr>
+      <td class="phase">P6</td>
+      <td><a href="2026-08-06-phase-6-frontend-api.html">طبقة ربط الواجهة (API)</a></td>
+      <td>تحديث الواجهة الأمامية لتتكلم مع أوامر البيع والإشعارات الجديدة بشكل صحيح.</td>
+      <td><span class="badge b-green">مكتملة</span></td>
+    </tr>
+    <tr>
+      <td class="phase">P7</td>
+      <td><a href="2026-08-07-phase-7-frontend-ui.html">واجهة المستخدم (UI)</a></td>
+      <td>شاشة أوامر البيع الكاملة + مركز الإشعارات + الترجمة — البناء اكتمل والاختبار اليدوي (E2E) باقٍ.</td>
+      <td><span class="badge b-amber">بنيان مكتمل</span></td>
+    </tr>
+    <tr>
+      <td class="phase">P8</td>
+      <td><a href="2026-08-09-phase-8-returns-management.html">نظام المرتجعات (Returns)</a></td>
+      <td>مرتجعات العملاء والموردين بدورة حياة كاملة (اعتماد/استلام/رد مالي/إقفال) + حجر التالف + ربط بأوامر البيع + 7 صلاحيات منفصلة.</td>
+      <td><span class="badge b-green">مكتملة</span></td>
+    </tr>
+  </table>
+</div>
+
+<h2>ملخص الوضع العام</h2>
+<div class="card">
+  <ul>
+    <li><b>المراحل P0 → P8 اكتملت</b> من ناحية الكود والاختبار التقني.</li>
+    <li>الاختبارات الخلفية: <b>13 مجموعة / 142 اختبارًا ناجحًا</b> + بناء الواجهة ناجح.</li>
+    <li>قاعدة بيانات الإنتاج: الصلاحيات مطبّقة (owner=50) مع نسخ احتياطية قبليه.</li>
+    <li><b>المتبقي قبل الإطلاق:</b> اختبار يدوي شامل (E2E) من أجهزة حقيقية ثم النشر.</li>
+  </ul>
+</div>
+
+<div class="footer">AD Station — نظام إدارة المخزون — فهرس تقارير المراحل — 2026-08-07</div>
+
+</div>
+</body>
+</html>
