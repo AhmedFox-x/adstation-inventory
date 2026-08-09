@@ -18,7 +18,8 @@ export const prisma = new PrismaClient({
 });
 
 export async function resetTestDb(): Promise<void> {
-  await prisma.$executeRawUnsafe(`DROP SCHEMA public CASCADE; CREATE SCHEMA public;`);
+  await prisma.$executeRawUnsafe(`DROP SCHEMA public CASCADE`);
+  await prisma.$executeRawUnsafe(`CREATE SCHEMA public`);
 }
 
 export async function isSchemaApplied(): Promise<boolean> {
@@ -27,7 +28,11 @@ export async function isSchemaApplied(): Promise<boolean> {
       SELECT migration_name FROM _prisma_migrations WHERE finished_at IS NOT NULL
     `;
     const names = rows.map((r) => r.migration_name);
-    return names.includes('0_init') && names.includes('20260731221214_sales_orders_v2');
+    return (
+      names.includes('0_init') &&
+      names.includes('20260731221214_sales_orders_v2') &&
+      names.includes('20260807204935_returns_management')
+    );
   } catch {
     return false;
   }

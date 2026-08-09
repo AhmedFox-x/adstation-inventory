@@ -23,6 +23,17 @@ describe('Composite Indexes — موجودة فعليًا في DB', () => {
       'SystemSettings_key_key',
       'SalesDelivery_deliveryNumber_key',
       'SalesOrder_orderNumber_key',
+      'ReturnOrder_status_createdAt_idx',
+      'ReturnOrder_type_idx',
+      'ReturnOrder_sourceType_sourceId_idx',
+      'ReturnOrder_partyId_idx',
+      'ReturnOrder_createdBy_idx',
+      'ReturnOrderItem_returnId_idx',
+      'ReturnOrderItem_productId_idx',
+      'ReturnOrderItem_sourceItemId_idx',
+      'ReturnOrderStatusHistory_returnId_createdAt_idx',
+      'ReturnOrderStatusHistory_returnId_idx',
+      'ReturnOrder_returnNumber_key',
     ].sort();
 
     for (const e of expected) {
@@ -40,10 +51,13 @@ describe('Composite Indexes — موجودة فعليًا في DB', () => {
           'SalesOrder_clientId_createdAt_idx',
           'Notification_userId_isRead_createdAt_idx',
           'SalesOrderApproval_salesOrderId_status_idx',
-          'SalesOrderStatusHistory_orderId_createdAt_idx'
+          'SalesOrderStatusHistory_orderId_createdAt_idx',
+          'ReturnOrder_status_createdAt_idx',
+          'ReturnOrder_sourceType_sourceId_idx',
+          'ReturnOrderStatusHistory_returnId_createdAt_idx'
         )
     `;
-    expect(rows.length).toBe(5);
+    expect(rows.length).toBe(8);
     for (const r of rows) {
       const cols = r.definition.match(/\(([^)]+)\)/)?.[1];
       const colCount = cols ? cols.split(',').length : 0;
@@ -54,8 +68,8 @@ describe('Composite Indexes — موجودة فعليًا في DB', () => {
   test('الـ unique indexes فعلًا UNIQUE', async () => {
     const rows = await prisma.$queryRaw<Array<{ indexname: string }>>`
       SELECT indexname FROM pg_indexes
-      WHERE schemaname='public' AND indexname IN ('SalesOrder_orderNumber_key','SalesDelivery_deliveryNumber_key')
+      WHERE schemaname='public' AND indexname IN ('SalesOrder_orderNumber_key','SalesDelivery_deliveryNumber_key','ReturnOrder_returnNumber_key')
     `;
-    expect(rows.length).toBe(2);
+    expect(rows.length).toBe(3);
   });
 });

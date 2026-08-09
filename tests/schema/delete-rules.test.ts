@@ -166,4 +166,67 @@ describe('Delete Rules', () => {
     const left = await prisma.salesDeliveryItem.count({ where: { id: di.id } });
     expect(left).toBe(0);
   });
+
+  test('CASCADE: حذف ReturnOrder بيحذف Items + StatusHistory', async () => {
+    const client = await prisma.client.create({ data: { name: 'عميل' } });
+    const p1 = await prisma.product.create({ data: { name: 'منتج 1', stock: 10 } });
+    const p2 = await prisma.product.create({ data: { name: 'منتج 2', stock: 10 } });
+    const order = await prisma.salesOrder.create({
+      data: { orderNumber: `SO-RC-${Date.now()}`, clientId: client.id },
+    });
+
+    const ret = await prisma.returnOrder.create({
+      data: {
+        returnNumber: `RT-CASC-${Date.now()}`,
+        type: 'customer_return',
+        sourceType: 'sales_order',
+        sourceId: order.id,
+        partyId: client.id,
+        partyName: 'عميل',
+        items: {
+          create: [
+            { productId: p1.id, condition: 'new', reason: 'changed_mind', returnedQty: 2 },
+            { productId: p2.id, condition: 'damaged', reason: 'damaged', returnedQty: 1 },
+          ],
+        },
+        statusHistory: {
+          create: [{ toStatus: 'draft', changedBy: 'test' }],
+        },
+      },
+      include: { items: true, statusHistory: true },
+    });
+
+    expect(ret.items.length).toBe(2);
+    const itemIds = ret.items.map((i) => i.id);
+
+    await prisma.returnOrder.delete({ where: { id: ret.id } });
+
+    const itemsLeft = await prisma.returnOrderItem.count({ where: { id: { in: itemIds } } });
+    const histLeft = await prisma.returnOrderStatusHistory.count({ where: { returnId: ret.id } });
+    expect(itemsLeft).toBe(0);
+    expect(histLeft).toBe(0);
+  });
+
+  test('RESTRICT: ممنوع حذف Product مستخدم في ReturnOrderItem', async () => {
+    const client = await prisma.client.create({ data: { name: 'عميل' } });
+    const product = await prisma.product.create({ data: { name: 'منتج', stock: 10 } });
+    const order = await prisma.salesOrder.create({
+      data: { orderNumber: `SO-RR-${Date.now()}`, clientId: client.id },
+    });
+    await prisma.returnOrder.create({
+      data: {
+        returnNumber: `RT-REST-${Date.now()}`,
+        type: 'customer_return',
+        sourceType: 'sales_order',
+        sourceId: order.id,
+        partyId: client.id,
+        partyName: 'عميل',
+        items: { create: [{ productId: product.id, condition: 'new', reason: 'changed_mind', returnedQty: 1 }] },
+      },
+    });
+
+    await expect(
+      prisma.product.delete({ where: { id: product.id } }),
+    ).rejects.toThrow(/foreign key/i);
+  });
 });

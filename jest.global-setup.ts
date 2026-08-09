@@ -28,7 +28,10 @@ export default async function globalSetup(): Promise<void> {
         "Reservation",
         "Notification",
         "SalesDelivery",
-        "SalesDeliveryItem"
+        "SalesDeliveryItem",
+        "ReturnOrder",
+        "ReturnOrderItem",
+        "ReturnOrderStatusHistory"
         CASCADE
     `);
     return;

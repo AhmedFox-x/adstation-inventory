@@ -58,4 +58,34 @@ describe('Unique Constraints', () => {
       }),
     ).rejects.toThrow(/unique/i);
   });
+
+  test('ReturnOrder.returnNumber ممنوع يتكرر', async () => {
+    const num = `RT-202608-${String(Date.now()).slice(-6)}`;
+    const client = await prisma.client.create({ data: { name: 'عميل' } });
+    const order = await prisma.salesOrder.create({
+      data: { orderNumber: `SO-RU-${Date.now()}`, clientId: client.id },
+    });
+    await prisma.returnOrder.create({
+      data: {
+        returnNumber: num,
+        type: 'customer_return',
+        sourceType: 'sales_order',
+        sourceId: order.id,
+        partyId: client.id,
+        partyName: 'عميل',
+      },
+    });
+    await expect(
+      prisma.returnOrder.create({
+        data: {
+          returnNumber: num,
+          type: 'customer_return',
+          sourceType: 'sales_order',
+          sourceId: order.id,
+          partyId: client.id,
+          partyName: 'عميل',
+        },
+      }),
+    ).rejects.toThrow(/unique/i);
+  });
 });

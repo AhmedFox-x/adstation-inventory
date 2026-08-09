@@ -88,4 +88,57 @@ describe('Required Fields — Insert بيعتمد عليهم لازم يفشل (
       ),
     ).rejects.toThrow(/null|quantity/i);
   });
+
+  test('ReturnOrder بدون returnNumber يفشل (NOT NULL)', async () => {
+    const c = await prisma.client.create({ data: { name: 'عميل' } });
+    const o = await prisma.salesOrder.create({
+      data: { orderNumber: `SO-RQ-${Date.now()}`, clientId: c.id },
+    });
+    await expect(
+      prisma.$executeRawUnsafe(
+        `INSERT INTO "ReturnOrder" ("id", "type", "sourceType", "sourceId") VALUES ('x8', 'customer_return', 'sales_order', '${o.id}')`,
+      ),
+    ).rejects.toThrow(/null|returnNumber/i);
+  });
+
+  test('ReturnOrderItem بدون productId يفشل (NOT NULL)', async () => {
+    const c = await prisma.client.create({ data: { name: 'عميل' } });
+    const o = await prisma.salesOrder.create({
+      data: { orderNumber: `SO-RQ2-${Date.now()}`, clientId: c.id },
+    });
+    const r = await prisma.returnOrder.create({
+      data: {
+        returnNumber: `RT-RQ-${Date.now()}`,
+        type: 'customer_return',
+        sourceType: 'sales_order',
+        sourceId: o.id,
+      },
+    });
+    await expect(
+      prisma.$executeRawUnsafe(
+        `INSERT INTO "ReturnOrderItem" ("id", "returnId", "condition", "reason", "returnedQty") VALUES ('x9', '${r.id}', 'new', 'damaged', 1)`,
+      ),
+    ).rejects.toThrow(/null|productId/i);
+  });
+
+  test('ReturnOrderItem بدون returnedQty يفشل (NOT NULL)', async () => {
+    const c = await prisma.client.create({ data: { name: 'عميل' } });
+    const p = await prisma.product.create({ data: { name: 'منتج' } });
+    const o = await prisma.salesOrder.create({
+      data: { orderNumber: `SO-RQ3-${Date.now()}`, clientId: c.id },
+    });
+    const r = await prisma.returnOrder.create({
+      data: {
+        returnNumber: `RT-RQ3-${Date.now()}`,
+        type: 'customer_return',
+        sourceType: 'sales_order',
+        sourceId: o.id,
+      },
+    });
+    await expect(
+      prisma.$executeRawUnsafe(
+        `INSERT INTO "ReturnOrderItem" ("id", "returnId", "productId", "condition", "reason") VALUES ('x10', '${r.id}', '${p.id}', 'new', 'damaged')`,
+      ),
+    ).rejects.toThrow(/null|returnedQty/i);
+  });
 });

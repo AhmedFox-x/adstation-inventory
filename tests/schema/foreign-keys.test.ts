@@ -152,4 +152,42 @@ describe('Foreign Keys', () => {
       }),
     ).rejects.toThrow(/foreign key/i);
   });
+
+  test('ReturnOrderItem.returnId → ReturnOrder.id (ترفض مرتجع غير موجود)', async () => {
+    const { productId } = await seedBase();
+    await expect(
+      prisma.returnOrderItem.create({
+        data: {
+          returnId: 'nonexistent-return',
+          productId,
+          condition: 'new',
+          reason: 'changed_mind',
+          returnedQty: 1,
+        },
+      }),
+    ).rejects.toThrow(/foreign key/i);
+  });
+
+  test('ReturnOrderItem.productId → Product.id (ترفض منتج غير موجود)', async () => {
+    const { orderId } = await seedBase();
+    const ret = await prisma.returnOrder.create({
+      data: {
+        returnNumber: `RT-FK-${Date.now()}`,
+        type: 'customer_return',
+        sourceType: 'sales_order',
+        sourceId: orderId,
+      },
+    });
+    await expect(
+      prisma.returnOrderItem.create({
+        data: {
+          returnId: ret.id,
+          productId: 'nonexistent-product',
+          condition: 'new',
+          reason: 'changed_mind',
+          returnedQty: 1,
+        },
+      }),
+    ).rejects.toThrow(/foreign key/i);
+  });
 });

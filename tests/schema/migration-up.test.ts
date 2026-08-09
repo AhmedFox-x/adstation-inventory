@@ -16,6 +16,9 @@ describe('Migration Up — من الصفر', () => {
       'PurchaseOrderStatusHistory',
       'Reservation',
       'RoleConfig',
+      'ReturnOrder',
+      'ReturnOrderItem',
+      'ReturnOrderStatusHistory',
       'SalesDelivery',
       'SalesDeliveryItem',
       'SalesOrder',
@@ -44,6 +47,7 @@ describe('Migration Up — من الصفر', () => {
     const applied = rows.filter((r) => r.finished_at !== null).map((r) => r.migration_name);
     expect(applied).toContain('0_init');
     expect(applied).toContain('20260731221214_sales_orders_v2');
+    expect(applied).toContain('20260807204935_returns_management');
   });
 
   test('مفيش أي migration فاشلة (rolled_back_at NULL)', async () => {

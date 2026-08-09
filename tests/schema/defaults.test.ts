@@ -94,4 +94,47 @@ describe('Default Values', () => {
     });
     expect(delivery.deliveredAt).toBeInstanceOf(Date);
   });
+
+  test('Product.quarantineStock ياخد 0 افتراضيًا', async () => {
+    const product = await prisma.product.create({ data: { name: 'منتج' } });
+    expect(product.quarantineStock).toBe(0);
+  });
+
+  test('ReturnOrder.status ياخد draft + version 1 + warehouseDestination returns + refundStatus none افتراضيًا', async () => {
+    const client = await prisma.client.create({ data: { name: 'عميل' } });
+    const order = await prisma.salesOrder.create({
+      data: { orderNumber: `SO-RDEF-${Date.now()}`, clientId: client.id },
+    });
+    const ret = await prisma.returnOrder.create({
+      data: {
+        returnNumber: `RT-DEF-${Date.now()}`,
+        type: 'customer_return',
+        sourceType: 'sales_order',
+        sourceId: order.id,
+      },
+    });
+    expect(ret.status).toBe('draft');
+    expect(ret.version).toBe(1);
+    expect(ret.warehouseDestination).toBe('returns');
+    expect(ret.refundStatus).toBe('none');
+  });
+
+  test('ReturnOrderItem.receivedQty ياخد 0 افتراضيًا', async () => {
+    const client = await prisma.client.create({ data: { name: 'عميل' } });
+    const product = await prisma.product.create({ data: { name: 'منتج' } });
+    const order = await prisma.salesOrder.create({
+      data: { orderNumber: `SO-RI-${Date.now()}`, clientId: client.id },
+    });
+    const ret = await prisma.returnOrder.create({
+      data: {
+        returnNumber: `RT-RI-${Date.now()}`,
+        type: 'customer_return',
+        sourceType: 'sales_order',
+        sourceId: order.id,
+        items: { create: [{ productId: product.id, condition: 'new', reason: 'changed_mind', returnedQty: 2 }] },
+      },
+      include: { items: true },
+    });
+    expect(ret.items[0].receivedQty).toBe(0);
+  });
 });

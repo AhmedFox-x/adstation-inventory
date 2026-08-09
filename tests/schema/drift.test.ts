@@ -1,5 +1,6 @@
 import { execSync } from 'child_process';
 import * as path from 'path';
+import { readFileSync } from 'fs';
 import { testUrl } from './helpers';
 
 const root = path.resolve(__dirname, '../../');
@@ -32,10 +33,20 @@ describe('Drift Test', () => {
     const testDbName = testUrl.split('/').pop()!;
     expect(testDbName).toContain('test');
 
-    const prodUrl = process.env.DATABASE_URL;
+    const prodUrl = readProdDbUrl();
     if (prodUrl) {
       const prodDbName = prodUrl.split('/').pop()!;
       expect(testDbName).not.toBe(prodDbName);
     }
   });
 });
+
+function readProdDbUrl(): string | undefined {
+  try {
+    const env = readFileSync(path.resolve(root, '.env'), 'utf8');
+    const m = env.match(/^DATABASE_URL=(.+)$/m);
+    return m ? m[1].trim() : undefined;
+  } catch {
+    return undefined;
+  }
+}

@@ -92,7 +92,10 @@ export async function cleanDb(): Promise<void> {
       "Reservation",
       "Notification",
       "SalesDelivery",
-      "SalesDeliveryItem"
+      "SalesDeliveryItem",
+      "ReturnOrder",
+      "ReturnOrderItem",
+      "ReturnOrderStatusHistory"
       CASCADE
   `);
 }
