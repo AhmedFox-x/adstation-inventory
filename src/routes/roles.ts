@@ -1,7 +1,8 @@
 import { Router } from "express";
 import { prisma } from "../config/database";
 import { requireAuth, requirePermission, AuthRequest } from "../middleware/auth";
-import { DEFAULT_ROLES, ALL_PERMISSIONS } from "../utils/permissions";
+import { ALL_PERMISSIONS } from "../utils/permissions";
+import { upsertDefaultRoles } from "../utils/seedRoles";
 
 const router = Router();
 
@@ -57,27 +58,13 @@ router.put("/roles/:id", requireAuth, requirePermission("roles.edit"), async (re
   }
 });
 
-// POST /api/inventory/roles/seed — create default roles if missing
+// POST /api/inventory/roles/seed — upsert default roles (إنشاء الناقص + تحديث الموجود)
 router.post("/roles/seed", requireAuth, requirePermission("roles.edit"), async (_req: AuthRequest, res) => {
   try {
-    const created: string[] = [];
-    for (const [name, config] of Object.entries(DEFAULT_ROLES)) {
-      const exists = await prisma.roleConfig.findUnique({ where: { name } });
-      if (!exists) {
-        await prisma.roleConfig.create({
-          data: {
-            name,
-            displayName: config.displayName,
-            description: config.description,
-            permissions: JSON.stringify(config.permissions),
-          },
-        });
-        created.push(name);
-      }
-    }
+    const { created, updated } = await upsertDefaultRoles(prisma);
 
     const roles = await prisma.roleConfig.findMany({ orderBy: { createdAt: "asc" } });
-    res.json({ created, roles: roles.map(r => ({ ...r, permissions: JSON.parse(r.permissions) })) });
+    res.json({ created, updated, roles: roles.map(r => ({ ...r, permissions: JSON.parse(r.permissions) })) });
   } catch (err: any) {
     res.status(500).json({ error: err?.message || "Failed to seed roles" });
   }

@@ -35,7 +35,9 @@ export function requirePermission(...perms: string[]) {
       return;
     }
 
-    if (req.user.role === "owner") {
+    // Emergency bypass — Disabled افتراضيًا. يُفعَّل فقط عند الطوارئ عبر env.
+    const emergencyBypass = process.env.PERMISSION_EMERGENCY_BYPASS === "true";
+    if (req.user.role === "owner" && emergencyBypass) {
       next();
       return;
     }

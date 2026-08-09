@@ -1,4 +1,5 @@
 import { PrismaClient } from "@prisma/client";
+import { upsertDefaultRoles } from "./utils/seedRoles";
 
 const prisma = new PrismaClient();
 
@@ -19,27 +20,29 @@ const products = [
 
 async function main() {
   const existing = await prisma.product.count();
-  if (existing > 0) {
-    console.log(`ℹ️  Database already has ${existing} products — skipping seed.`);
-    return;
+  if (existing === 0) {
+    console.log("Seeding inventory products...");
+
+    for (const p of products) {
+      await prisma.product.create({
+        data: {
+          name: p.name,
+          variant: p.variant,
+          stock: p.stock,
+          minStock: p.minStock,
+          category: p.category,
+        },
+      });
+    }
+
+    const count = await prisma.product.count();
+    console.log(`✅ Seeded ${count} products`);
+  } else {
+    console.log(`ℹ️  Database already has ${existing} products — skipping product seed.`);
   }
 
-  console.log("Seeding inventory products...");
-
-  for (const p of products) {
-    await prisma.product.create({
-      data: {
-        name: p.name,
-        variant: p.variant,
-        stock: p.stock,
-        minStock: p.minStock,
-        category: p.category,
-      },
-    });
-  }
-
-  const count = await prisma.product.count();
-  console.log(`✅ Seeded ${count} products`);
+  const roles = await upsertDefaultRoles(prisma);
+  console.log(`✅ Roles: created=${roles.created.join(',') || 'none'} updated=${roles.updated.join(',') || 'none'}`);
 }
 
 main()

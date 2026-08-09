@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html dir="rtl" lang="ar">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Audit — تناقض مصدر الحقيقة للصلاحيات (DB vs Code)</title>
+<style>
+  :root {
+    --red: #DC2626;
+    --red-dark: #B91C1C;
+    --ink: #0d0a08;
+    --paper: #faf7f4;
+    --card: #ffffff;
+    --muted: #6b6660;
+    --border: #e7e1da;
+    --green: #166534;
+    --green-bg: #f0fdf4;
+    --amber-bg: #fffbeb;
+    --amber: #92400e;
+    --amber-b: #fef3c7;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: "Segoe UI", Tahoma, Arial, sans-serif;
+    background: var(--paper);
+    color: var(--ink);
+    line-height: 1.7;
+    padding: 40px 16px;
+  }
+  .wrap { max-width: 960px; margin: 0 auto; }
+  header {
+    background: linear-gradient(135deg, #7a1414 0%, var(--red-dark) 100%);
+    color: #fff;
+    border-radius: 16px;
+    padding: 36px 40px;
+    margin-bottom: 28px;
+  }
+  header .tag {
+    display: inline-block;
+    background: #fff;
+    color: var(--red-dark);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    padding: 4px 12px;
+    border-radius: 999px;
+    margin-bottom: 14px;
+  }
+  header h1 { font-size: 26px; margin-bottom: 8px; }
+  header p { color: #f3d9d6; font-size: 15px; }
+  .meta { display: flex; gap: 24px; flex-wrap: wrap; margin-top: 18px; }
+  .meta div { font-size: 13px; color: #f0c9c5; }
+  .meta b { color: #fff; }
+  h2 {
+    font-size: 20px;
+    margin: 32px 0 14px;
+    padding-right: 12px;
+    border-right: 4px solid var(--red);
+  }
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px 24px;
+    margin-bottom: 14px;
+  }
+  .warn {
+    background: var(--amber-bg);
+    border: 1px solid var(--amber-b);
+    border-radius: 12px;
+    padding: 16px 20px;
+    margin-bottom: 14px;
+  }
+  .warn b { color: var(--amber); }
+  table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 13.5px; }
+  th, td { text-align: right; padding: 9px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  th { background: #f4f0eb; font-size: 13px; }
+  .mono { font-family: Consolas, monospace; font-size: 12px; direction: ltr; text-align: left; }
+  .miss { color: var(--red-dark); }
+  .extra { color: var(--amber); }
+  code { background: #f4f0eb; padding: 1px 6px; border-radius: 4px; font-family: Consolas, monospace; font-size: 12px; }
+  .footer { margin-top: 28px; color: var(--muted); font-size: 12px; text-align: center; }
+  ul { padding-right: 22px; }
+  li { margin-bottom: 5px; font-size: 14px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <span class="tag">تقرير اكتشاف وتحليل (Discovery)</span>
+  <h1>تناقض مصدر الحقيقة للصلاحيات: قاعدة البيانات مقابل الكود</h1>
+  <p>قبل أي تنفيذ إضافي — وثيقة تجمّد المشكلة وتقدّم الـ Audit الكامل وترفع القرارات المعلقة</p>
+  <div class="meta">
+    <div>التاريخ: <b>2 أغسطس 2026</b></div>
+    <div>النوع: <b>Audit — لا تغيير في الكود</b></div>
+    <div>الحالة: <b>بانتظار القرار</b></div>
+  </div>
+</header>
+
+<h2>1. وصف المشكلة</h2>
+<div class="card">
+  <p>يوجد <strong>مصدران للحقيقة (Source of Truth)</strong> لصلاحيات الأدوار، وهما مختلفان:</p>
+  <ul>
+    <li><strong>المصدر الأول — قاعدة البيانات (جدول <code>RoleConfig</code>)</strong>: يحتوي على قوائم الصلاحيات الفعلية لكل دور.</li>
+    <li><strong>المصدر الثاني — الكود (<code>src/utils/permissions.ts</code>)</strong>: <code>PERMISSIONS</code> + <code>DEFAULT_ROLES</code> يُستخدمان عند إنشاء الأدوار لأول مرة.</li>
+  </ul>
+  <p><strong>النتيجة:</strong> عند إضافة صلاحيات جديدة للكود (مثل <code>sales_orders.*</code>)، الأدوار الموجودة في قاعدة البيانات لا تحصل عليها تلقائيًا — يبقى "منطق النظام" (الـ middleware) والإعداد الفعلي (الـ DB) مختلفين، إلا لجهة واحدة:</p>
+  <p style="background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:10px 14px;margin-top:10px;">
+    <strong>الـ Owner Bypass في <code>src/middleware/auth.ts:38-41</code>:</strong> أي مستخدم بدور <code>owner</code> يمر من كل الصلاحيات بدون التحقق من قاعدة البيانات إطلاقًا. هذا "يخفي" العيب في عمليات المالك لكنه لا يصلحه، ويترك الخلل ظاهرًا في أدوار المدير والمتابع.
+  </p>
+</div>
+
+<h2>2. الـ Audit الكامل — الكود مقابل قاعدة البيانات (قبل التعديل)</h2>
+<div class="card">
+  <p><em>المصدران: <span class="mono">_backup-roleconfig-2026-08-02.json</span> (لقطة قاعدة البيانات قبل أي تعديل) و<span class="mono">src/utils/permissions.ts</span> (الكود الحالي).</em></p>
+  <table>
+    <thead>
+      <tr><th>الدور</th><th>الصلاحيات في الـ DB</th><th>الصلاحيات في الكود</th><th>ناقصة من الـ DB</th><th>زائدة في الـ DB</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><b>owner</b></td>
+        <td>35</td>
+        <td>48 (كل <code>ALL_PERMISSIONS</code>)</td>
+        <td class="miss"><b>13</b> — <span class="mono">purchase_orders.submit, purchase_orders.approve, purchase_orders.cancel, purchase_orders.close, sales_orders.view, sales_orders.create, sales_orders.edit_draft, sales_orders.confirm, sales_orders.process, sales_orders.ship, sales_orders.deliver, sales_orders.close, sales_orders.cancel</span></td>
+        <td>0</td>
+      </tr>
+      <tr>
+        <td><b>manager</b></td>
+        <td>26</td>
+        <td>41</td>
+        <td class="miss"><b>17</b> — <span class="mono">suppliers.delete, purchase_orders.receive, clients.delete, reservations.edit, purchase_orders.submit, purchase_orders.approve, purchase_orders.cancel, purchase_orders.close, sales_orders.view, sales_orders.create, sales_orders.edit_draft, sales_orders.confirm, sales_orders.process, sales_orders.ship, sales_orders.deliver, sales_orders.close, sales_orders.cancel</span></td>
+        <td class="extra"><b>2</b> — <span class="mono">products.import, products.export</span></td>
+      </tr>
+      <tr>
+        <td><b>viewer</b></td>
+        <td>5</td>
+        <td>5</td>
+        <td class="miss"><b>1</b> — <span class="mono">sales_orders.view</span></td>
+        <td class="extra"><b>1</b> — <span class="mono">reservations.view</span></td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<h2>3. اكتشافات حرجة من الـ Audit</h2>
+<div class="card">
+  <ul>
+    <li><strong>الصلاحيات الناقصة الأهم:</strong> كل صلاحيات <code>sales_orders.*</code> ناقصة من الأدوار الثلاثة في الـ DB — وهذا كان مقصودًا منهجياً (المرحلة لسه بتبني feature)، لكنه يثبت أن قاعدة البيانات لا تتحدّث من الكود تلقائيًا.</li>
+    <li><strong>الـ manager كان عنده صلاحيات غير موجودة في الكود:</strong> <code>products.import</code> و <code>products.export</code> موجودة في الـ DB لكنها ليست في <code>DEFAULT_ROLES.manager</code> الحالي. هذا إما <strong>تخصيص يدوي مقصود</strong> في فترة سابقة، أو بقايا إصدار قديم من الكود.</li>
+    <li><strong>الـ viewer كان عنده <code>reservations.view</code> بدل <code>sales_orders.view</code>:</strong> نفس الملاحظة — الـ DB مخالف للكود في اتجاهين.</li>
+    <li><strong>الـ Owner Bypass</strong> موجود منذ أول commit للـ RBAC (<span class="mono">90e8fe5</span> — 19 يوليو 2026): يعني <strong>قرار تصميم من بداية المشروع</strong>، وليس Legacy عشوائي — لكنه مع ذلك يخلق مصدر حقيقة ثالث فعلي (الدور في الـ JWT) فوق الـ DB والكود.</li>
+  </ul>
+</div>
+
+<h2>4. تأثير حدث بالفعل (اعتراف شفاف)</h2>
+<div class="warn">
+  <b>⚠️ تم تطبيق Upsert على قاعدة بيانات الإنتاج قبل اكتمال هذا الـ Audit.</b><br><br>
+  عوّض الـ upsert الصلاحيات الناقصة (13 للـ owner + 17 للـ manager + 1 للـ viewer)، لكنه في نفس الوقت <strong>مسح التخصيصات المخالفة للكود</strong>: أزال <code>products.import</code> و <code>products.export</code> من الـ manager، وأزال <code>reservations.view</code> من الـ viewer (استبدلها بـ <code>sales_orders.view</code>).<br><br>
+  الحالة الحالية للإنتاج: <b>owner=48, manager=41, viewer=5</b> — أي قاعدة البيانات الآن <strong>مطابقة تمامًا للكود</strong>.<br><br>
+  <strong>الوضع الحالي = "الكود هو مصدر الحقيقة" (تطبيق جزئي للقرار المعماري المقترح).</strong> لكن هل هذا هو المطلوب؟ السؤال مفتوح لوجود احتمال تخصيصات يدوية مقصودة سابقة. لدينا لقطة احتياطية كاملة للتراجع: <span class="mono">_backup-roleconfig-2026-08-02.json</span>.
+</div>
+
+<h2>5. القرارات المعتمدة (من مالك المشروع)</h2>
+<div class="card">
+  <table>
+    <thead><tr><th>القرار</th><th>القرار النهائي</th><th>التنفيذ</th></tr></thead>
+    <tbody>
+      <tr><td>Owner Bypass</td><td>إلغاؤه تدريجيًا — الـ DB هي مصدر الحقيقة الوحيد</td><td>أُزيل من <code>requirePermission</code>؛ Feature Flag <code>PERMISSION_EMERGENCY_BYPASS</code> للطوارئ فقط (Disabled افتراضيًا)</td></tr>
+      <tr><td>التخصيصات القديمة</td><td>لا تُعتمد — Drift أثناء التطوير</td><td>محفوظة كنسخة احتياطية فقط في <code>_backup-roleconfig-2026-08-02.json</code>؛ غير مضافة للكود</td></tr>
+      <tr><td>الوضع الحالي (48/41/5)</td><td>البقاء عليه — لا رجوع للخلف</td><td>تأكيد idempotency على prod: <code>created=none updated=none</code></td></tr>
+      <tr><td>آلية التحديث</td><td>Upsert ذكي مع <code>isSystem</code></td><td>الـ seed يحدّث الأدوار الـ system فقط، ولا يلمس Custom Roles — تنفيذ فعلي في <code>seedRoles.ts</code></td></tr>
+      <tr><td>حقل الفصل</td><td><code>isSystem</code> (موجود مسبقًا في الـ DB)</td><td>استخدام الحقل الموجود <code>isSystem</code> — بدون Migration إضافية</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<h2>6. ملخص التنفيذ الفعلي</h2>
+<div class="card">
+  <ul>
+    <li><code>src/utils/seedRoles.ts</code>: الـ upsert الآن يحدّث فقط الأدوار <code>isSystem=true</code>، وينشئ المدمج بـ <code>isSystem=true</code>، ولا يلمس <code>isSystem=false</code> إطلاقًا.</li>
+    <li><code>src/middleware/auth.ts</code>: أُزيل الـ Owner Bypass الدائم؛ Feature Flag للطوارئ <code>PERMISSION_EMERGENCY_BYPASS=true</code> (مغلق افتراضيًا).</li>
+    <li>الاختبارات: 76/76 ناجحة (11 suites) — تشمل 26/26 لـ permissions/middleware مع سيناريوهات isSystem إيجابية وسلبية.</li>
+    <li>تطبيق على prod: <code>owner=48, manager=41, viewer=5</code> جميعها <code>isSystem=true</code> — الـ upsert عاد بـ <code>none/none</code> (لا تغيير).</li>
+  </ul>
+</div>
+
+<div class="footer">AD Station Inventory System — تقرير Discovery لأغراض اتخاذ القرار • 2 أغسطس 2026</div>
+</div>
+</body>
+</html>

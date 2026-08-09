@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html dir="rtl" lang="ar">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>تقرير تنفيذي — Phase 1: تفعيل نظام الصلاحيات (RBAC)</title>
+<style>
+  :root {
+    --red: #DC2626; --red-dark: #B91C1C; --ink: #0d0a08; --paper: #faf7f4;
+    --card: #ffffff; --muted: #6b6660; --border: #e7e1da;
+    --green: #166534; --green-bg: #f0fdf4; --amber-bg: #fffbeb; --amber: #92400e;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: "Segoe UI", Tahoma, Arial, sans-serif; background: var(--paper); color: var(--ink); line-height: 1.7; padding: 40px 16px; }
+  .wrap { max-width: 900px; margin: 0 auto; }
+  header { background: linear-gradient(135deg, var(--ink) 0%, #1a1410 100%); color: #fff; border-radius: 16px; padding: 36px 40px; margin-bottom: 28px; }
+  header .tag { display: inline-block; background: var(--red); color: #fff; font-size: 12px; font-weight: 700; letter-spacing: 0.08em; padding: 4px 12px; border-radius: 999px; margin-bottom: 14px; }
+  header h1 { font-size: 26px; margin-bottom: 8px; }
+  header p { color: #d8d2cb; font-size: 15px; }
+  .meta { display: flex; gap: 24px; flex-wrap: wrap; margin-top: 18px; }
+  .meta div { font-size: 13px; color: #b8b0a7; }
+  .meta b { color: #fff; }
+  h2 { font-size: 20px; margin: 32px 0 14px; padding-right: 12px; border-right: 4px solid var(--red); }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 20px 24px; margin-bottom: 14px; }
+  table { width: 100%; border-collapse: collapse; margin: 12px 0; }
+  th, td { text-align: right; padding: 10px 12px; border-bottom: 1px solid var(--border); font-size: 14px; }
+  th { background: #f4f0eb; font-size: 13px; }
+  .badge { display: inline-block; font-size: 12px; font-weight: 700; padding: 2px 10px; border-radius: 999px; margin-left: 4px; }
+  .b-green { background: var(--green-bg); color: var(--green); }
+  .b-red { background: #fef2f2; color: var(--red-dark); }
+  .b-amber { background: var(--amber-bg); color: var(--amber); }
+  .success { background: var(--green-bg); border: 1px solid #bbf7d0; }
+  ul { padding-right: 22px; }
+  li { margin-bottom: 6px; font-size: 14px; }
+  .footer { margin-top: 28px; color: var(--muted); font-size: 12px; text-align: center; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <span class="tag">تقرير تنفيذي — P1</span>
+  <h1>تفعيل نظام الصلاحيات (RBAC) على كل النظام</h1>
+  <p>كل شاشة وكل عملية محمية بصلاحية محددة — وفصل صارم بين العمليات العادية والعمليات الخطيرة (الاعتماد النهائي).</p>
+  <div class="meta">
+    <div>التاريخ: <b>2026-07</b></div>
+    <div>المرحلة: <b>Phase 1</b></div>
+    <div>الحالة: <b>مكتملة ومُختبَرة</b></div>
+  </div>
+</header>
+
+<h2>1. ملخص تنفيذي</h2>
+<div class="card">
+  <p>النظام كان فيه أسماء أدوار (Manager، Viewer، Owner) لكنها <b>لم تكن تمنع فعليًا أي شيء</b> — أي مستخدم مسجل كان ممكن يحذف منتج أو يمسح سجل حركة أو يعتمد جردًا نهائيًا يغيّر المخزون كله. في نظام يتحكم في مخزون حقيقي بالجنيه، ده ثغرة خطيرة.</p>
+  <p>الآن كل عملية محمية بصلاحية محددة، والأدوار منفذة فعليًا في الخادم (وليس في الواجهة فقط). كما أُغلق "ممر المالك السري" الذي كان يتجاوز كل الصلاحيات، لصالح قاعدة واضحة: <b>لا أحد يتجاوز الصلاحيات مهما كان دوره</b>، والوصول الطارئ متاح كخيار مغلق افتراضيًا.</p>
+</div>
+
+<h2>2. قبل / بعد</h2>
+<div class="card">
+  <table>
+    <tr><th>الوضع السابق</th><th>الوضع الحالي</th></tr>
+    <tr><td>أي مستخدم يقدر يحذف منتج أو يمسح سجلات الحركة أو يعدّل صلاحيات غيره.</td><td>الـ Viewer للعرض فقط، والـ Manager للعمليات التشغيلية، والـ Owner وحده للاعتمادات النهائية.</td></tr>
+    <tr><td>الأدوار مجرد تسميات على الورق — غير مفروضة في الخادم.</td><td>كل Route يتحقق من الصلاحية في الخادم، وأي محاولة غير مصرح بها تُرفض تلقائيًا (403).</td></tr>
+    <tr><td>الصلاحية غير المستخدمة (مثل حذف السجل) كانت موجودة في الكود.</td><td>الصلاحيات غير المستخدمة أُزيلت تمامًا؛ سجل الحركة لا يُمسح نهائيًا (append-only).</td></tr>
+    <tr><td>لا يوجد تمييز بين تعديل بسيط واعتماد نهائي خطير.</td><td>العمليات الخطيرة (اعتماد جرد، اعتماد أوامر بيع) لها صلاحيات منفصلة أعلى، للمالك فقط.</td></tr>
+  </table>
+</div>
+
+<h2>3. الصلاحيات حسب الدور</h2>
+<div class="card">
+  <table>
+    <tr><th>الدور</th><th>القدرة</th><th>لا يستطيع</th></tr>
+    <tr><td><b>المالك (Owner)</b></td><td>كل الصلاحيات + اعتماد الجرد النهائي + اعتماد أوامر البيع</td><td>مسح سجل الحركة — ممنوع نهائيًا</td></tr>
+    <tr><td><b>المدير (Manager)</b></td><td>إدارة المنتجات، صرف/توريد، المسح، السجل، التقارير</td><td>الاعتمادات النهائية (الجرد وأوامر البيع الكبيرة)</td></tr>
+    <tr><td><b>المشاهد (Viewer)</b></td><td>عرض المنتجات والتقارير والسجل فقط</td><td>أي تعديل أو حذف أو صرف/توريد</td></tr>
+  </table>
+  <p style="margin-top:10px; font-size:13px; color:var(--muted);">ملاحظة: أرقام الصلاحيات النهائية بعد كل المراحل — owner=50، manager=41، viewer=5 (موثقة في <code>docs/permissions.md</code>).</p>
+</div>
+
+<h2>4. الأثر على الشغل اليومي</h2>
+<div class="card">
+  <ul>
+    <li><b>الـ Viewer:</b> بيشوف البيانات بس — لو محتاج يصرف أو يورّد لازم يطلب من المدير.</li>
+    <li><b>المدير:</b> عمله اليومي ما اتغيّرش، لكن مش هيقدر يعتمد جردًا نهائيًا بعد الآن.</li>
+    <li><b>المالك:</b> صلاحياته كاملة كما كانت + الاحتفاظ بالصلاحيات الخطيرة لنفسه فقط.</li>
+    <li><b>الكل:</b> أي محاولة وصول غير مصرح بها هتترفض برسالة واضحة، والسجل التاريخي مضمون ضد أي حذف.</li>
+  </ul>
+</div>
+
+<h2>5. حالة الاختبار</h2>
+<div class="card success">
+  <table>
+    <tr><th>السيناريو</th><th>المستخدم</th><th>النتيجة</th></tr>
+    <tr><td>محاولة صرف مخزون</td><td>Viewer</td><td><span class="badge b-red">مرفوض (403)</span></td></tr>
+    <tr><td>صرف مخزون</td><td>Manager</td><td><span class="badge b-green">مقبول (200)</span></td></tr>
+    <tr><td>محاولة حذف سجل حركة</td><td>أي شخص</td><td><span class="badge b-red">المسار غير موجود (404)</span></td></tr>
+    <tr><td>محاولة اعتماد جرد نهائي</td><td>Manager</td><td><span class="badge b-red">مرفوض (403)</span></td></tr>
+    <tr><td>اعتماد جرد نهائي</td><td>Owner</td><td><span class="badge b-green">مقبول (200)</span></td></tr>
+  </table>
+  <p style="margin-top:10px; font-size:14px;">كل اختبار "منع" كان مقرونًا باختبار "سماح" لدور آخر — حتى لا نغلق النظام على نفسه.</p>
+</div>
+
+<h2>6. الملفات الرئيسية</h2>
+<div class="card">
+  <ul>
+    <li><code>src/middleware/auth.ts</code> + <code>src/utils/permissions.ts</code> — التحقق المركزي من الصلاحيات.</li>
+    <li><code>src/middleware/errorHandler.ts</code> — توحيد رسائل الرفض الواضحة.</li>
+    <li><code>src/utils/seedRoles.ts</code> + <code>src/seed.ts</code> — تعريف الأدوار والصلاحيات.</li>
+    <li><code>docs/permissions.md</code> — التوثيق الرسمي للصلاحيات (جديد).</li>
+    <li><code>src/routes/roles.ts</code> — إدارة الأدوار/الصلاحيات من لوحة التحكم.</li>
+  </ul>
+</div>
+
+<h2>7. الخطوة الجاية</h2>
+<div class="card">
+  <p>الانتقال إلى <b>Phase 2</b>: إعداد بنية قاعدة بيانات أوامر البيع (Sales Orders) — بعدما أصبح نظام الصلاحيات موثوقًا لحماية قيمة المخزون الجديدة.</p>
+</div>
+
+<div class="footer">AD Station — نظام إدارة المخزون — تقرير Phase 1 — 2026-07</div>
+
+</div>
+</body>
+</html>

@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>تقرير تنفيذي — مراقبة الأخطاء + Rate Limiting</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: 'Segoe UI', Tahoma, Arial, sans-serif; background: #f8f9fa; color: #111; line-height: 1.6; }
+    .container { max-width: 900px; margin: 40px auto; background: white; border-radius: 12px; box-shadow: 0 4px 24px rgba(0,0,0,0.08); overflow: hidden; }
+    .header { background: linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%); color: white; padding: 32px 40px; display: flex; align-items: center; justify-content: space-between; }
+    .header h1 { font-size: 22px; font-weight: 700; }
+    .header .meta { font-size: 13px; opacity: 0.85; text-align: left; }
+    .body { padding: 32px 40px; }
+    .section { margin-bottom: 28px; }
+    .section-title { font-size: 16px; font-weight: 700; color: #7c3aed; margin-bottom: 12px; padding-bottom: 6px; border-bottom: 2px solid #ede9fe; }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 20px; }
+    .card { background: #f8f9fa; border: 1px solid #e5e7eb; border-radius: 8px; padding: 16px; }
+    .card h3 { font-size: 12px; color: #6b7280; margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.5px; }
+    .card .value { font-size: 28px; font-weight: 700; color: #111; }
+    .card .value.green { color: #059669; }
+    .card .value.purple { color: #7c3aed; }
+    .card .value.blue { color: #2563eb; }
+    .card .value.amber { color: #d97706; }
+    .feature-box { background: #f5f3ff; border: 1px solid #ddd6fe; border-radius: 8px; padding: 20px; margin-bottom: 20px; }
+    .feature-box h3 { color: #5b21b6; margin-bottom: 8px; font-size: 15px; }
+    .feature-box ul { list-style: none; padding: 0; }
+    .feature-box li { padding: 6px 0; font-size: 13px; color: #374151; display: flex; align-items: flex-start; gap: 8px; }
+    .feature-box li::before { content: '\2705'; flex-shrink: 0; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th { background: #f3f4f6; padding: 8px 12px; text-align: right; font-weight: 600; border-bottom: 2px solid #e5e7eb; }
+    td { padding: 8px 12px; border-bottom: 1px solid #f3f4f6; }
+    .next-steps { background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 8px; padding: 16px; }
+    .next-steps h3 { color: #1e40af; margin-bottom: 8px; }
+    .footer { padding: 16px 40px; background: #f8f9fa; border-top: 1px solid #e5e7eb; text-align: center; font-size: 11px; color: #9ca3af; }
+    @media print { .container { box-shadow: none; } }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <div>
+        <h1>مراقبة الأخطاء + Rate Limiting</h1>
+        <p style="margin-top: 4px; opacity: 0.9;">تقرير تنفيذي — P2.15</p>
+      </div>
+      <div class="meta">
+        <div>23 يوليو 2026</div>
+        <div>AD Station Inventory System</div>
+      </div>
+    </div>
+
+    <div class="body">
+      <div class="section">
+        <h2 class="section-title">ملخص تنفيذي</h2>
+        <p>تم حماية النظام من إساءة الاستخدام عبر تحديد عدد الطلبات المسموح بها لكل نقطة وصول (Rate Limiting)، وتم ربطه بأداة مراقبة أخطاء عالمية (Sentry) عشان لو حصل أي مشكلة في السيرفر نعرف فورًا — مش لما حد من الفريق يتصل ويقول "النظام مش شغال".</p>
+      </div>
+
+      <div class="grid">
+        <div class="card">
+          <h3>نطاقات Rate Limiting</h3>
+          <div class="value purple">4</div>
+        </div>
+        <div class="card">
+          <h3>Sentry DSN</h3>
+          <div class="value amber">اختياري</div>
+        </div>
+        <div class="card">
+          <h3>الأخطاء المُبلغ عنها</h3>
+          <div class="value green">تلقائي</div>
+        </div>
+        <div class="card">
+          <h3>البيانات الحساسة</h3>
+          <div class="value blue">مخفية</div>
+        </div>
+      </div>
+
+      <div class="feature-box">
+        <h3> Rate Limiting — حدود الطلبات</h3>
+        <ul>
+          <li>صفحة تسجيل الدخول: 20 محاولة كل 15 دقيقة (حماية من Brute Force)</li>
+          <li>API عام: 200 طلب كل 15 دقيقة (حماية عامة)</li>
+          <li>مسح الصور بالـ AI: 10 طلبات كل دقيقة (مكلف ومعالجته ثقيلة)</li>
+          <li>استيراد CSV: 10 طلبات كل ساعة (عمليات ثقيلة على الداتابيس)</li>
+          <li>الرد على المستخدم يتضمن رسالة خطأ واضحة + وقت الانتظار المتبقي</li>
+        </ul>
+      </div>
+
+      <div class="feature-box">
+        <h3>Sentry — مراقبة الأخطاء</h3>
+        <ul>
+          <li>إبلاغ تلقائي عن أي خطأ غير متوقع في السيرفر</li>
+          <li>معلومات Request كاملة مع كل خطأ (Route, Headers, IP)</li>
+          <li>كلام المرور (Authorization header) مخفي تلقائيًا في التقارير</li>
+          <li>يعمل فقط لو `SENTRY_DSN` مضبوط — بدونه النظام يشتغل عادي من غير أي أثر</li>
+          <li>نسبة تتبع الأداء: 20% في Production (مش 100% عشان ما يبطّئش النظام)</li>
+        </ul>
+      </div>
+
+      <div class="section">
+        <h2 class="section-title">قبل / بعد</h2>
+        <table>
+          <thead><tr><th>الجانب</th><th>قبل</th><th>بعد</th></tr></thead>
+          <tbody>
+            <tr>
+              <td><strong>حماية الـ API</strong></td>
+              <td>مفيش — أي حد يعمل كام مليون request يقدر</td>
+              <td>حدود واضحة لكل نوع طلب</td>
+            </tr>
+            <tr>
+              <td><strong>اكتشاف الأخطاء</strong></td>
+              <td>نعرف لما حد يتصل ويقول "النظام واقف"</td>
+              <td> bumped فورًا مع معلومات كاملة</td>
+            </tr>
+            <tr>
+              <td><strong>حماية كلمات المرور</strong></td>
+              <td>مفيش حماية من Brute Force</td>
+              <td>20 محاوية كل 15 دقيقة بس</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="section">
+        <h2 class="section-title">حالة الاختبار</h2>
+        <div class="grid">
+          <div class="card">
+            <h3>Rate Limit Auth</h3>
+            <div class="value green" style="font-size: 18px">✅ 429 بعد 21 طلب</div>
+          </div>
+          <div class="card">
+            <h3>API عام</h3>
+            <div class="value green" style="font-size: 18px">✅ يعمل بشكل طبيعي</div>
+          </div>
+          <div class="card">
+            <h3>Sentry init</h3>
+            <div class="value green" style="font-size: 18px">✅ يعمل عند تكوين DSN</div>
+          </div>
+          <div class="card">
+            <h3>Health check</h3>
+            <div class="value green" style="font-size: 18px">✅ غير مُقيّد</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="next-steps">
+        <h3>الخطوة الجاية</h3>
+        <p style="font-size: 14px; color: #374151;">P2.15 مكتمل. باقي من P2: تحليل ABC، كشف المخزون الراكد، تقرير القيمة المالية. اقتراح إعادة الطلب (P2.10) محتاج بيانات تاريخية (2-3 شهور).</p>
+      </div>
+    </div>
+
+    <div class="footer">
+      AD Station — Inventory Management System — تقرير تنفيذي — 23 يوليو 2026
+    </div>
+  </div>
+</body>
+</html>
