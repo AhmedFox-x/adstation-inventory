@@ -3,7 +3,7 @@ import multer from "multer";
 import path from "path";
 import fs from "fs";
 import { prisma } from "../config/database";
-import { AuthRequest, requireAuth } from "../middleware/auth";
+import { AuthRequest, requireAuth, requirePermission } from "../middleware/auth";
 
 const router = Router();
 
@@ -33,7 +33,7 @@ const upload = multer({
 });
 
 // ── POST /api/inventory/products/:id/image — upload image file ──────────────
-router.post("/products/:id/image", requireAuth, upload.single("image"), async (req, res, next) => {
+router.post("/products/:id/image", requireAuth, requirePermission("products.edit"), upload.single("image"), async (req, res, next) => {
   try {
     const existing = await prisma.product.findUnique({ where: { id: req.params.id } });
     if (!existing) {
@@ -64,7 +64,7 @@ router.post("/products/:id/image", requireAuth, upload.single("image"), async (r
 });
 
 // ── DELETE /api/inventory/products/:id/image — remove image ─────────────────
-router.delete("/products/:id/image", requireAuth, async (req, res, next) => {
+router.delete("/products/:id/image", requireAuth, requirePermission("products.edit"), async (req, res, next) => {
   try {
     const existing = await prisma.product.findUnique({ where: { id: req.params.id } });
     if (!existing) {
@@ -171,8 +171,13 @@ router.get("/products", requireAuth, async (req, res, next) => {
       prisma.product.count({ where }),
     ]);
 
+    const productsWithAvailable = products.map((p) => ({
+      ...p,
+      availableStock: p.stock - p.reservedStock,
+    }));
+
     res.json({
-      products,
+      products: productsWithAvailable,
       page: Number(page),
       limit: take,
       total,
@@ -184,7 +189,7 @@ router.get("/products", requireAuth, async (req, res, next) => {
 });
 
 // ── POST /api/inventory/products ──────────────────────────────────────────────
-router.post("/products", requireAuth, async (req, res, next) => {
+router.post("/products", requireAuth, requirePermission("products.create"), async (req, res, next) => {
   try {
     const { name, variant, stock, minStock, sku, category, price, imageUrl } = req.body;
     if (!name || !String(name).trim()) {
@@ -216,7 +221,7 @@ router.post("/products", requireAuth, async (req, res, next) => {
 });
 
 // ── PATCH /api/inventory/products/:id ─────────────────────────────────────────
-router.patch("/products/:id", requireAuth, async (req, res, next) => {
+router.patch("/products/:id", requireAuth, requirePermission("products.edit"), async (req, res, next) => {
   try {
     const { name, variant, stock, minStock, sku, category, price, imageUrl } = req.body;
     const existing = await prisma.product.findUnique({ where: { id: req.params.id } });
@@ -250,7 +255,7 @@ router.patch("/products/:id", requireAuth, async (req, res, next) => {
 });
 
 // ── DELETE /api/inventory/products/:id ────────────────────────────────────────
-router.delete("/products/:id", requireAuth, async (req, res, next) => {
+router.delete("/products/:id", requireAuth, requirePermission("products.delete"), async (req, res, next) => {
   try {
     const existing = await prisma.product.findUnique({ where: { id: req.params.id } });
     if (!existing) {

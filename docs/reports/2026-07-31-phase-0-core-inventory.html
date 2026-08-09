@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html dir="rtl" lang="ar">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>تقرير تنفيذي — Phase 0: أساس نظام المخزون</title>
+<style>
+  :root {
+    --red: #DC2626; --red-dark: #B91C1C; --ink: #0d0a08; --paper: #faf7f4;
+    --card: #ffffff; --muted: #6b6660; --border: #e7e1da;
+    --green: #166534; --green-bg: #f0fdf4; --amber-bg: #fffbeb; --amber: #92400e;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: "Segoe UI", Tahoma, Arial, sans-serif; background: var(--paper); color: var(--ink); line-height: 1.7; padding: 40px 16px; }
+  .wrap { max-width: 900px; margin: 0 auto; }
+  header { background: linear-gradient(135deg, var(--ink) 0%, #1a1410 100%); color: #fff; border-radius: 16px; padding: 36px 40px; margin-bottom: 28px; }
+  header .tag { display: inline-block; background: var(--red); color: #fff; font-size: 12px; font-weight: 700; letter-spacing: 0.08em; padding: 4px 12px; border-radius: 999px; margin-bottom: 14px; }
+  header h1 { font-size: 26px; margin-bottom: 8px; }
+  header p { color: #d8d2cb; font-size: 15px; }
+  .meta { display: flex; gap: 24px; flex-wrap: wrap; margin-top: 18px; }
+  .meta div { font-size: 13px; color: #b8b0a7; }
+  .meta b { color: #fff; }
+  h2 { font-size: 20px; margin: 32px 0 14px; padding-right: 12px; border-right: 4px solid var(--red); }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 20px 24px; margin-bottom: 14px; }
+  table { width: 100%; border-collapse: collapse; margin: 12px 0; }
+  th, td { text-align: right; padding: 10px 12px; border-bottom: 1px solid var(--border); font-size: 14px; }
+  th { background: #f4f0eb; font-size: 13px; }
+  .badge { display: inline-block; font-size: 12px; font-weight: 700; padding: 2px 10px; border-radius: 999px; margin-left: 4px; }
+  .b-green { background: var(--green-bg); color: var(--green); }
+  .b-red { background: #fef2f2; color: var(--red-dark); }
+  .b-amber { background: var(--amber-bg); color: var(--amber); }
+  .success { background: var(--green-bg); border: 1px solid #bbf7d0; }
+  ul { padding-right: 22px; }
+  li { margin-bottom: 6px; font-size: 14px; }
+  .footer { margin-top: 28px; color: var(--muted); font-size: 12px; text-align: center; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <span class="tag">تقرير تنفيذي — P0</span>
+  <h1>أساس نظام إدارة المخزون</h1>
+  <p>البنية الأولى الكاملة: المنتجات، المخزون، التصاريح، الجرد، سجل الحركة، الموردون، التقارير، والمسح السريع.</p>
+  <div class="meta">
+    <div>التاريخ: <b>2026-07</b></div>
+    <div>المرحلة: <b>Phase 0</b></div>
+    <div>الحالة: <b>مكتملة ومُختبَرة 100%</b></div>
+  </div>
+</header>
+
+<h2>1. ملخص تنفيذي</h2>
+<div class="card">
+  <p>تم بناء الأساس الكامل لنظام إدارة مخزون شركة الدعاية والإعلان: منتجات بباركود QR فريد، متابعة المخزون بالجنيه، تصاريح صرف وتوريد، جرد دوري، و<b>سجل حركة لا يمكن مسحه نهائيًا</b> — عشان أي خلاف مع عميل يكون فيه بيانات موثوقة ومثبتة.</p>
+  <p>أُضيفت أدوات تسرّع شغل المخزن: مسح بالكاميرا، استيراد/تصدير CSV، إشعارات بانخفاض المخزون، ومراقبة أخطاء مع حماية من الطلبات المتكررة (Rate Limiting).</p>
+</div>
+
+<h2>2. قبل / بعد</h2>
+<div class="card">
+  <table>
+    <tr><th>الوضع السابق</th><th>الوضع الحالي</th></tr>
+    <tr><td>المخزون كان على ورق/إكسل مبعثر، وكمياته مش موثوقة.</td><td>مخزون رقمي دقيق لكل منتج، يتحدّث لحظيًا مع كل صرف وتوريد، وقيمته محسوبة بالجنيه.</td></tr>
+    <tr><td>صرف منتج كان بياخد 5-10 دقايق والبحث اليدوي عرضة للخطأ.</td><td>مسح QR بالكاميرا يُنفذ الصرف/التوريد في أقل من دقيقة وبدون أخطاء.</td></tr>
+    <tr><td>سجل الحركة كان ممكن يتحذف أو يحتوي قيمًا خاطئة.</td><td>سجل append-only لا يُمسح أبدًا، وقيمه محسوبة تلقائيًا وصحيحة (موثّق باختبارات).</td></tr>
+    <tr><td>لا يوجد تتبّع للموردين ولا لأوامر الشراء.</td><td>موردون + أوامر شراء كاملة ترفع المخزون وتسجّل في السجل.</td></tr>
+  </table>
+</div>
+
+<h2>3. مكونات المرحلة</h2>
+<div class="card">
+  <ul>
+    <li><b>المنتجات والمخزون:</b> إدارة كاملة مع سعر بيع/شراء، وحدة قياس، كمية دنيا للتنبيه، وقيمة مخزون بالجنيه.</li>
+    <li><b>الباركود والمسح السريع:</b> كود QR فريد لكل منتج + شاشة مسح بالكاميرا للصرف/التوريد + طباعة الأكواد.</li>
+    <li><b>تصاريح الصرف والتوريد:</b> إجراءات موثقة تخصم/تضيف من المخزون مع سجل كامل.</li>
+    <li><b>الجرد (Stocktake):</b> جلسات جرد + اعتماد نهائي للجرد يطابق المخزون الفعلي.</li>
+    <li><b>سجل الحركة (Inventory Log):</b> append-only — كل حركة تُسجّل مع من فعلها ومتى، وممنوع مسحها.</li>
+    <li><b>الموردون وأوامر الشراء:</b> موردون حقيقيون + أوامر شراء ترفع المخزون عند الاستلام.</li>
+    <li><b>العملاء:</b> كيان عميل + تنبيهات انخفاض المخزون.</li>
+    <li><b>أدوات:</b> استيراد/تصدير CSV، مراقبة أخطاء (Sentry)، Rate Limiting، Backup/Restore.</li>
+  </ul>
+</div>
+
+<h2>4. الأثر على الشغل اليومي</h2>
+<div class="card">
+  <ul>
+    <li><b>موظفو المخزن:</b> التنفيذ بالباركود أسرع وأدق بكثير من البحث اليدوي.</li>
+    <li><b>المدير:</b> تقارير وجرد موثوقين مبنين على سجل لا يتلاعب به أحد.</li>
+    <li><b>المالك:</b> صورة دقيقة لقيمة المخزون وقرارات شراء مبنية على أرقام حقيقية.</li>
+  </ul>
+</div>
+
+<h2>5. حالة الاختبار</h2>
+<div class="card success">
+  <table>
+    <tr><th>المجموعة</th><th>النتيجة</th></tr>
+    <tr><td>الباركود: توليد 989 كود فريد + بحث صحيح/خاطئ + شاشة المسح + الطباعة</td><td><span class="badge b-green">نجحت ✅</span></td></tr>
+    <tr><td>سجل الحركة: توريد → جرد → اعتماد بقيم صحيحة، وعدم وجود سجلات 0→0 خاطئة</td><td><span class="badge b-green">نجحت ✅</span></td></tr>
+    <tr><td>استيراد/تصدير CSV + تقارير + انخفاض المخزون</td><td><span class="badge b-green">نجحت ✅</span></td></tr>
+    <tr><td>اختبارات البنية (Schema) عبر جميع الجداول</td><td><span class="badge b-green">نجحت ✅</span></td></tr>
+  </table>
+</div>
+
+<h2>6. الملفات الرئيسية</h2>
+<div class="card">
+  <ul>
+    <li><code>prisma/schema.prisma</code> — كل كيانات المخزون (منتجات، عملاء، موردون، تصاريح، جرد، سجل حركة).</li>
+    <li><code>src/utils/barcode.ts</code> + <code>src/routes/barcode.ts</code> — توليد الأكواد والبحث بها.</li>
+    <li><code>src/routes/inventory-log.ts</code> — سجل حركة append-only.</li>
+    <li><code>src/routes/suppliers.ts</code> + <code>src/routes/purchase-orders.ts</code> — الموردون وأوامر الشراء.</li>
+    <li><code>src/routes/csv.ts</code>, <code>src/utils/alerts.ts</code>, <code>src/utils/sentry.ts</code>, <code>src/middleware/rateLimiter.ts</code> — الأدوات.</li>
+  </ul>
+</div>
+
+<h2>7. الخطوة الجاية</h2>
+<div class="card">
+  <p>الانتقال إلى <b>Phase 1 (RBAC)</b>: تفعيل نظام الصلاحيات الفعلي على كل الشاشات والعمليات — لأن الأساس أصبح جاهزًا وذا قيمة مالية حقيقية يستحق الحماية.</p>
+</div>
+
+<div class="footer">AD Station — نظام إدارة المخزون — تقرير Phase 0 — 2026-07</div>
+
+</div>
+</body>
+</html>

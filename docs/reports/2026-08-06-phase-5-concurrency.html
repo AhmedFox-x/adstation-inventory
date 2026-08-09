@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html dir="rtl" lang="ar">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>تقرير تنفيذي — Phase 5: حماية التزامن (Race Conditions)</title>
+<style>
+  :root {
+    --red: #DC2626; --red-dark: #B91C1C; --ink: #0d0a08; --paper: #faf7f4;
+    --card: #ffffff; --muted: #6b6660; --border: #e7e1da;
+    --green: #166534; --green-bg: #f0fdf4; --amber-bg: #fffbeb; --amber: #92400e;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: "Segoe UI", Tahoma, Arial, sans-serif; background: var(--paper); color: var(--ink); line-height: 1.7; padding: 40px 16px; }
+  .wrap { max-width: 900px; margin: 0 auto; }
+  header { background: linear-gradient(135deg, var(--ink) 0%, #1a1410 100%); color: #fff; border-radius: 16px; padding: 36px 40px; margin-bottom: 28px; }
+  header .tag { display: inline-block; background: var(--red); color: #fff; font-size: 12px; font-weight: 700; letter-spacing: 0.08em; padding: 4px 12px; border-radius: 999px; margin-bottom: 14px; }
+  header h1 { font-size: 26px; margin-bottom: 8px; }
+  header p { color: #d8d2cb; font-size: 15px; }
+  .meta { display: flex; gap: 24px; flex-wrap: wrap; margin-top: 18px; }
+  .meta div { font-size: 13px; color: #b8b0a7; }
+  .meta b { color: #fff; }
+  h2 { font-size: 20px; margin: 32px 0 14px; padding-right: 12px; border-right: 4px solid var(--red); }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 20px 24px; margin-bottom: 14px; }
+  table { width: 100%; border-collapse: collapse; margin: 12px 0; }
+  th, td { text-align: right; padding: 10px 12px; border-bottom: 1px solid var(--border); font-size: 14px; }
+  th { background: #f4f0eb; font-size: 13px; }
+  .badge { display: inline-block; font-size: 12px; font-weight: 700; padding: 2px 10px; border-radius: 999px; margin-left: 4px; }
+  .b-green { background: var(--green-bg); color: var(--green); }
+  .b-red { background: #fef2f2; color: var(--red-dark); }
+  .b-amber { background: var(--amber-bg); color: var(--amber); }
+  .success { background: var(--green-bg); border: 1px solid #bbf7d0; }
+  .warn { background: var(--amber-bg); border: 1px solid #fde68a; }
+  ul { padding-right: 22px; }
+  li { margin-bottom: 6px; font-size: 14px; }
+  .footer { margin-top: 28px; color: var(--muted); font-size: 12px; text-align: center; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <span class="tag">تقرير تنفيذي — P5</span>
+  <h1>حماية التزامن: منع "تصرفين في نفس اللحظة"</h1>
+  <p>إصلاح ثغرة حقيقية اكتشفتها الاختبارات: مضاعفة خصم المخزون أو التسليم عند حدوث عمليتين متوازيتين.</p>
+  <div class="meta">
+    <div>التاريخ: <b>2026-08-06</b></div>
+    <div>المرحلة: <b>Phase 5</b></div>
+    <div>الحالة: <b>مكتملة ومُختبَرة</b></div>
+  </div>
+</header>
+
+<h2>1. ملخص تنفيذي</h2>
+<div class="card">
+  <p>أثناء اختبار أوامر البيع، اكتشفنا مشكلة خطيرة: لو حاول موظفان تأكيد نفس الطلب أو توصيل نفس الكمية <b>في نفس اللحظة</b>، كان الخادم يقرأ المخزون ثم يعدّله بعد فاصل زمني — فيحجز الكمية مرتين ويخدع الرصيد، أو يُسلَّم الصنف مرتين.</p>
+  <p>تم إصلاح ذلك بحيث يقرأ الخادم البيانات من جديد <b>بعد</b> تأمين الصفوف في قاعدة البيانات. النتيجة: يُقبل تنفيذ واحد فقط، ويُرفض الثاني برسالة واضحة. وأُضيفت اختبارات تمنع رجوع المشكلة مستقبلًا.</p>
+</div>
+
+<h2>2. قبل / بعد</h2>
+<div class="card warn">
+  <table>
+    <tr><th>قبل الإصلاح (عند عمليتين متوازيتين)</th><th>بعد الإصلاح</th></tr>
+    <tr><td>تأكيدان متوازيان لنفس الطلب → الكمية تُحجز مرتين (double reserve) والرصيد يُخدع.</td><td>تأكيد واحد فقط يحجز؛ الثاني يُرفض بـ 409 ولا تتضاعف الحجوزات.</td></tr>
+    <tr><td>محاولتا توصيل متوازيتان → الصنف يُخصم من المخزون مرتين رغم وجود كمية واحدة.</td><td>المخزون يُنقص مرة واحدة بالضبط، ولا يحدث توصيل سلبي.</td></tr>
+    <tr><td>الخادم يعتمد على صورة قديمة من البيانات تمت قراءتها قبل القفل.</td><td>إعادة قراءة طازجة (fresh) بعد أخذ قفل الصفوف — التحقق دائمًا من أحدث حالة.</td></tr>
+  </table>
+</div>
+
+<h2>3. إزاي اتحل</h2>
+<div class="card">
+  <ul>
+    <li>عمليات التأكيد والتوصيل كلها جوه <b>معاملة واحدة (Transaction)</b> مع قفل الصفوف (Row Lock).</li>
+    <li>بعد أخذ القفل، يُعاد قراءة الطلب والمخزون من قاعدة البيانات (وليس من الصورة القديمة) ثم يتم التحقق من الحالة.</li>
+    <li>الطلب الذي لم يعد في حالة "مسودة" يُرفض تأكيده؛ والطلب في حالة غير "مشحون/توصيل جزئي" يُرفض توصيله.</li>
+    <li>أي تعارض من مستخدم آخر (نسخة قديمة) يُرفض برمز 409 مع رسالة "عدّل الصفحة وأعد المحاولة".</li>
+  </ul>
+</div>
+
+<h2>4. حالة الاختبار</h2>
+<div class="card success">
+  <table>
+    <tr><th>السيناريو</th><th>النتيجة</th></tr>
+    <tr><td>تأكيدان متوازيان لنفس الطلب → واحد فقط يحجز والثاني 409</td><td><span class="badge b-green">نجحت ✅</span></td></tr>
+    <tr><td>محاولتا توصيل متوازيتان → خصم واحد فقط من المخزون</td><td><span class="badge b-green">نجحت ✅</span></td></tr>
+    <tr><td>الاختباران السابقان كانا يفشلان قبل الإصلاح (خدع الرصيد) وبيمروا بعده</td><td><span class="badge b-green">إصلاح مثبت ✅</span></td></tr>
+    <tr><td>إعادة تشغيل السويت الكامل بعد الإصلاح</td><td><span class="badge b-green">99 / 99 اختبارًا ✅</span></td></tr>
+  </table>
+</div>
+
+<h2>5. الملفات</h2>
+<div class="card">
+  <ul>
+    <li><code>src/services/salesOrderService.ts</code> — إعادة القراءة الطازجة بعد القفل في عمليتي التأكيد والتوصيل.</li>
+    <li><code>tests/sales-orders/salesOrderService.test.ts</code> — اختباران جديدان للتزامن (المجموعة أصبحت 22 اختبارًا).</li>
+  </ul>
+</div>
+
+<h2>6. الخطوة الجاية</h2>
+<div class="card">
+  <p>بعد تثبيت سلامة البيانات تحت الضغط، ننتقل إلى <b>Phase 6/7</b>: ربط واجهة المستخدم الكاملة بأوامر البيع والإشعارات.</p>
+</div>
+
+<div class="footer">AD Station — نظام إدارة المخزون — تقرير Phase 5 — 2026-08-06</div>
+
+</div>
+</body>
+</html>

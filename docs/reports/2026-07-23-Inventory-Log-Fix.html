@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>تقرير إصلاح سجل الحركة — AD Station</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Inter', 'Segoe UI', Tahoma, sans-serif;
+            background: #f5f5f5;
+            color: #1a1a1a;
+            line-height: 1.7;
+            direction: rtl;
+        }
+        .page {
+            max-width: 860px;
+            margin: 40px auto;
+            background: #fff;
+            border-radius: 16px;
+            overflow: hidden;
+            box-shadow: 0 4px 24px rgba(0,0,0,0.06);
+        }
+        .banner {
+            background: linear-gradient(135deg, #DC2626 0%, #B91C1C 100%);
+            color: #fff;
+            padding: 48px 48px 40px;
+        }
+        .banner .tag {
+            display: inline-block;
+            background: rgba(255,255,255,0.2);
+            padding: 4px 16px;
+            border-radius: 20px;
+            font-size: 13px;
+            font-weight: 500;
+            margin-bottom: 16px;
+        }
+        .banner h1 {
+            font-size: 30px;
+            font-weight: 700;
+            margin-bottom: 8px;
+        }
+        .banner .meta {
+            font-size: 14px;
+            opacity: 0.85;
+        }
+        .body { padding: 40px 48px 48px; }
+        .section { margin-bottom: 36px; }
+        .section:last-child { margin-bottom: 0; }
+        .section h2 {
+            font-size: 18px;
+            font-weight: 700;
+            color: #DC2626;
+            margin-bottom: 14px;
+            padding-bottom: 8px;
+            border-bottom: 2px solid #fee2e2;
+        }
+        .section p, .section li {
+            font-size: 15px;
+            color: #374151;
+        }
+        .section ul {
+            padding-right: 24px;
+            margin-top: 8px;
+        }
+        .section li { margin-bottom: 8px; }
+        .card-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin-top: 16px;
+        }
+        .card {
+            border: 1px solid #e5e7eb;
+            border-radius: 12px;
+            padding: 24px;
+        }
+        .card.danger { border-color: #fca5a5; background: #fef2f2; }
+        .card.success { border-color: #86efac; background: #f0fdf4; }
+        .card .label {
+            font-size: 12px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 8px;
+        }
+        .card.danger .label { color: #dc2626; }
+        .card.success .label { color: #16a34a; }
+        .card .text {
+            font-size: 15px;
+            color: #374151;
+        }
+        .impact-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 16px;
+        }
+        .impact-table th {
+            background: #f9fafb;
+            padding: 12px 16px;
+            text-align: right;
+            font-size: 13px;
+            font-weight: 600;
+            color: #6b7280;
+            border-bottom: 2px solid #e5e7eb;
+        }
+        .impact-table td {
+            padding: 14px 16px;
+            font-size: 14px;
+            color: #374151;
+            border-bottom: 1px solid #f3f4f6;
+        }
+        .badge {
+            display: inline-block;
+            padding: 3px 10px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+        .badge.green { background: #dcfce7; color: #166534; }
+        .badge.yellow { background: #fef9c3; color: #854d0e; }
+        .next-box {
+            background: #eff6ff;
+            border: 1px solid #bfdbfe;
+            border-radius: 12px;
+            padding: 24px;
+            margin-top: 16px;
+        }
+        .next-box h3 {
+            font-size: 15px;
+            font-weight: 600;
+            color: #1e40af;
+            margin-bottom: 12px;
+        }
+        .next-box li {
+            margin-bottom: 6px;
+            font-size: 14px;
+        }
+        .footer {
+            background: #f9fafb;
+            padding: 20px 48px;
+            text-align: center;
+            font-size: 12px;
+            color: #9ca3af;
+            border-top: 1px solid #f3f4f6;
+        }
+    </style>
+</head>
+<body>
+<div class="page">
+    <div class="banner">
+        <div class="tag">تقرير تنفيذي — المرحلة P0</div>
+        <h1>إصلاح سجل الحركة (Inventory Log)</h1>
+        <div class="meta">التاريخ: 23 يوليو 2026 &nbsp;|&nbsp; الحالة: مكتمل ومُختبَر</div>
+    </div>
+
+    <div class="body">
+        <div class="section">
+            <h2>ملخص تنفيذي</h2>
+            <p>كانت سجلات الحركة (اللي بتوثّق كل صرف وتوريد وتعديل على المخزون) بتسجل أرقام خاطئة — كل العمليات كانت بتظهر إن المخزون بدأ من صفر وخلّص صفر، بغض النظر عن الكمية الفعلية. ده معناه إن السجل، اللي المفروض يكون "الحقيقة القانونية" لأي خلاف مع عميل أو جرد، كان ممكن يضحك على أي حد بيفتحه.</p>
+            <p style="margin-top: 12px;">التم إصلاحه بحيث كل عملية دلوقتي بتسجل الكمية الفعلية قبل وبعد — بشكل تلقائي وبدون أي تدخل يدوي. الكمية القديمة والجديدة بتتقرا من القاعدة مباشرة وقت تنفيذ العملية نفسها.</p>
+        </div>
+
+        <div class="section">
+            <h2>قبل وبعد</h2>
+            <div class="card-row">
+                <div class="card danger">
+                    <div class="label">قبل الإصلاح</div>
+                    <div class="text">
+                        م举例: عندك 10 قطع من منتج X. عملت صرف 3 قطع.<br><br>
+                        السجل بيقول: <strong>oldStock: 0 → newStock: 0</strong><br><br>
+                        يعني المدير لما بيفتح السجل، مش هيعرف المخزون كان كام قبل العملية ولا بقى كام. السجل مش بيفيد في أيTHING.
+                    </div>
+                </div>
+                <div class="card success">
+                    <div class="label">بعد الإصلاح</div>
+                    <div class="text">
+                        نفس المثال: عندك 10 قطع، صرف 3.<br><br>
+                        السجل بيقول: <strong>oldStock: 10 → newStock: 7</strong><br><br>
+                        دلوقتي السجل بيورّي الحقيقة بالظبط. لو في خلاف مع عميل أو جرد، السجل كافي وحده كمرجع.
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="section">
+            <h2>الأثر على الشغل اليومي</h2>
+            <table class="impact-table">
+                <thead>
+                    <tr>
+                        <th>الدور</th>
+                        <th>هل اتغيّر حاجة؟</th>
+                        <th>التفاصيل</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td><strong>المخزن</strong></td>
+                        <td><span class="badge green">مش محتاج يغيّر حاجة</span></td>
+                        <td>بيعمل صرف وتوريد زي ما هو. السجلات بقى صحيحة تلقائيًا.</td>
+                    </tr>
+                    <tr>
+                        <td><strong>المدير</strong></td>
+                        <td><span class="badge green">في تحسن</span></td>
+                        <td>لما بيفتح سجل الحركة، بيشوف أرقام حقيقية يقدر يتحقق منها.</td>
+                    </tr>
+                    <tr>
+                        <td><strong>المالك</strong></td>
+                        <td><span class="badge green">في تحسن</span></td>
+                        <td>أي تقرير أو جرد مبني على السجلات بقى موثوق.</td>
+                    </tr>
+                    <tr>
+                        <td><strong>العميل</strong></td>
+                        <td><span class="badge green">في تأثير غير مباشر</span></td>
+                        <td>في حالات الخلاف، بيانات المخزون المُوثّقة بقت موثوقة.</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <div class="section">
+            <h2>حالة الاختبار</h2>
+            <p>تم اختبار 3 سيناريوهات على البيئة الحقيقية (Production):</p>
+            <table class="impact-table">
+                <thead>
+                    <tr>
+                        <th>السيناريو</th>
+                        <th>النتيجة</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>توريد 10 قطع → جرد 7 → اعتماد</td>
+                        <td><span class="badge green">stock = 7, log: 10 → 7</span></td>
+                    </tr>
+                    <tr>
+                        <td>صرف بعدد أقل من المخزون</td>
+                        <td><span class="badge green">القيم صحيحة في السجل</span></td>
+                    </tr>
+                    <tr>
+                        <td>عدم وجود أي سجل بقيم 0 → 0</td>
+                        <td><span class="badge green">تم التأكد — صفر سجلات خاطئة</span></td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <div class="section">
+            <h2>الخطوة الجاية</h2>
+            <div class="next-box">
+                <h3>التالي في الخطة</h3>
+                <ul>
+                    <li>تفعيل نظام الصلاحيات (RBAC) — عشان نمنع أي دور من إنه يغيّر بيانات ما يخصّهش</li>
+                    <li>حل مشكلة الـ 8 منتجات من غير صور</li>
+                    <li>نسخ احتياطي تلقائي يومي</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+
+    <div class="footer">
+        تقرير من نظام إدارة مخزون AD Station &nbsp;|&nbsp; أعدّه تلقائيًا
+    </div>
+</div>
+</body>
+</html>

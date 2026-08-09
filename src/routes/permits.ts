@@ -1,15 +1,16 @@
 import { Router } from "express";
 import { prisma } from "../config/database";
-import { AuthRequest, requireAuth } from "../middleware/auth";
+import { AuthRequest, requireAuth, requirePermission } from "../middleware/auth";
 import { createError } from "../middleware/errorHandler";
 import { generateWithdrawalPermitNumber, generateSupplyPermitNumber } from "../utils/permitNumber";
+import { checkAndSendAlerts } from "../utils/alerts";
 
 const router = Router();
 
 // ── POST /api/inventory/withdraw ──────────────────────────────────────────────
-router.post("/withdraw", requireAuth, async (req: AuthRequest, res, next) => {
+router.post("/withdraw", requireAuth, requirePermission("permits.withdraw"), async (req: AuthRequest, res, next) => {
   try {
-    const { clientName, salesName, notes, items, confirmed, operationType } = req.body;
+    const { clientName, clientId, salesName, notes, items, confirmed, operationType } = req.body;
 
     if (!clientName || !String(clientName).trim()) {
       res.status(400).json({ error: "Client name is required" });
@@ -47,11 +48,12 @@ router.post("/withdraw", requireAuth, async (req: AuthRequest, res, next) => {
         continue;
       }
       const requested = Number(item.quantityRequested);
-      if (requested > product.stock) {
+      const available = product.stock - (product.reservedStock ?? 0);
+      if (requested > available) {
         shortages.push({
           productId: item.productId,
           productName: product.name,
-          available: product.stock,
+          available: Math.max(0, available),
           requested,
         });
       }
@@ -69,6 +71,7 @@ router.post("/withdraw", requireAuth, async (req: AuthRequest, res, next) => {
         data: {
           permitNumber,
           clientName: String(clientName).trim(),
+          clientId: clientId || null,
           salesName: salesName || null,
           notes: notes || null,
           status: shortages.length > 0 ? "partial" : "completed",
@@ -76,27 +79,29 @@ router.post("/withdraw", requireAuth, async (req: AuthRequest, res, next) => {
         },
       });
 
-      let totalChange = 0;
-      let firstProductId = "";
-
       for (const item of items) {
         const product = productMap.get(item.productId);
         if (!product) continue;
 
         const requested = Number(item.quantityRequested);
-        const actual = Math.min(requested, product.stock);
+        const prodAvailable = product.stock - (product.reservedStock ?? 0);
+        const actual = Math.min(requested, Math.max(0, prodAvailable));
         if (actual <= 0) continue;
 
-        totalChange -= actual;
-        if (!firstProductId) firstProductId = item.productId;
+        // Atomic read inside transaction for accurate before/after
+        const current = await tx.product.findUnique({
+          where: { id: item.productId },
+          select: { stock: true },
+        });
+        if (!current) continue;
 
-        const before = product.stock;
+        const before = current.stock;
         const after = before - actual;
 
-        // Update stock
+        // Atomic decrement — no race condition
         await tx.product.update({
           where: { id: item.productId },
-          data: { stock: after },
+          data: { stock: { decrement: actual } },
         });
 
         // Create permit item
@@ -109,16 +114,15 @@ router.post("/withdraw", requireAuth, async (req: AuthRequest, res, next) => {
             matchConfidence: item.matchConfidence || null,
           },
         });
-      }
 
-      if (firstProductId) {
+        // Create per-product inventory log with real stock values
         await tx.inventoryLog.create({
           data: {
             type: "withdraw",
-            productId: firstProductId,
-            oldStock: 0,
-            newStock: 0,
-            change: totalChange,
+            productId: item.productId,
+            oldStock: before,
+            newStock: after,
+            change: -actual,
             clientName: String(clientName).trim(),
             salesName: salesName || null,
             notes: notes || null,
@@ -144,13 +148,22 @@ router.post("/withdraw", requireAuth, async (req: AuthRequest, res, next) => {
       },
       shortages: shortages.length > 0 ? shortages : undefined,
     });
+
+    // Fire-and-forget: check for low stock alerts (non-blocking)
+    const affectedProductIds = items.filter((it: any) => it.actual > 0).map((it: any) => it.productId);
+    if (affectedProductIds.length > 0) {
+      prisma.product.findMany({
+        where: { id: { in: affectedProductIds } },
+        select: { id: true, name: true, stock: true, minStock: true, category: true },
+      }).then(checkAndSendAlerts).catch(() => {});
+    }
   } catch (err) {
     next(err);
   }
 });
 
 // ── POST /api/inventory/supply ────────────────────────────────────────────────
-router.post("/supply", requireAuth, async (req: AuthRequest, res, next) => {
+router.post("/supply", requireAuth, requirePermission("permits.supply"), async (req: AuthRequest, res, next) => {
   try {
     const { supplierName, notes, items, newProducts } = req.body;
 
@@ -169,9 +182,6 @@ router.post("/supply", requireAuth, async (req: AuthRequest, res, next) => {
         },
       });
 
-      let totalChange = 0;
-      let firstProductId = "";
-
       // Supply existing products
       if (items && items.length > 0) {
         const productIds = items.map((it: any) => it.productId);
@@ -187,15 +197,20 @@ router.post("/supply", requireAuth, async (req: AuthRequest, res, next) => {
           const qty = Number(item.quantity);
           if (qty <= 0) continue;
 
-          totalChange += qty;
-          if (!firstProductId) firstProductId = item.productId;
+          // Atomic read inside transaction for accurate before/after
+          const current = await tx.product.findUnique({
+            where: { id: item.productId },
+            select: { stock: true },
+          });
+          if (!current) continue;
 
-          const before = product.stock;
+          const before = current.stock;
           const after = before + qty;
 
+          // Atomic increment — no race condition
           await tx.product.update({
             where: { id: item.productId },
-            data: { stock: after },
+            data: { stock: { increment: qty } },
           });
 
           await tx.supplyItem.create({
@@ -203,6 +218,20 @@ router.post("/supply", requireAuth, async (req: AuthRequest, res, next) => {
               permitId: p.id,
               productId: item.productId,
               quantity: qty,
+            },
+          });
+
+          await tx.inventoryLog.create({
+            data: {
+              type: "supply",
+              productId: item.productId,
+              oldStock: before,
+              newStock: after,
+              change: qty,
+              salesName: supplierName || null,
+              notes: notes || null,
+              referenceType: "supply",
+              referenceId: p.id,
             },
           });
         }
@@ -213,41 +242,38 @@ router.post("/supply", requireAuth, async (req: AuthRequest, res, next) => {
         for (const np of newProducts) {
           if (!np.name || !String(np.name).trim()) continue;
 
+          const qty = Number(np.stock) || 0;
+
           const product = await tx.product.create({
             data: {
               name: String(np.name).trim(),
               variant: np.variant || null,
-              stock: Number(np.stock) || 0,
+              stock: qty,
             },
           });
-
-          totalChange += Number(np.stock) || 0;
-          if (!firstProductId) firstProductId = product.id;
 
           await tx.supplyItem.create({
             data: {
               permitId: p.id,
               productId: product.id,
-              quantity: Number(np.stock) || 0,
+              quantity: qty,
+            },
+          });
+
+          await tx.inventoryLog.create({
+            data: {
+              type: "supply",
+              productId: product.id,
+              oldStock: 0,
+              newStock: qty,
+              change: qty,
+              salesName: supplierName || null,
+              notes: notes || null,
+              referenceType: "supply",
+              referenceId: p.id,
             },
           });
         }
-      }
-
-      if (firstProductId) {
-        await tx.inventoryLog.create({
-          data: {
-            type: "supply",
-            productId: firstProductId,
-            oldStock: 0,
-            newStock: 0,
-            change: totalChange,
-            salesName: supplierName || null,
-            notes: notes || null,
-            referenceType: "supply",
-            referenceId: p.id,
-          },
-        });
       }
 
       return p;

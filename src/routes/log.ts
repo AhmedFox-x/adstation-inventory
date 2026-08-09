@@ -1,11 +1,11 @@
 import { Router } from "express";
 import { prisma } from "../config/database";
-import { requireAuth } from "../middleware/auth";
+import { requireAuth, requirePermission } from "../middleware/auth";
 
 const router = Router();
 
 // ── GET /api/inventory/log ────────────────────────────────────────────────────
-router.get("/log", requireAuth, async (req, res, next) => {
+router.get("/log", requireAuth, requirePermission("logs.view"), async (req, res, next) => {
   try {
     const { date, type, search, page = "1", limit = "20" } = req.query as Record<string, string>;
     const where: any = {};
@@ -127,7 +127,7 @@ router.get("/log", requireAuth, async (req, res, next) => {
 });
 
 // ── GET /api/inventory/log/:id — Full detail with permit + image ─────────────
-router.get("/log/:id", requireAuth, async (req, res, next) => {
+router.get("/log/:id", requireAuth, requirePermission("logs.view"), async (req, res, next) => {
   try {
     const { id } = req.params;
 
@@ -237,7 +237,7 @@ router.get("/log/:id", requireAuth, async (req, res, next) => {
 });
 
 // ── GET /api/inventory/report ─────────────────────────────────────────────────
-router.get("/report", requireAuth, async (req, res, next) => {
+router.get("/report", requireAuth, requirePermission("reports.view"), async (req, res, next) => {
   try {
     const { date, from, to } = req.query as Record<string, string>;
 
@@ -333,48 +333,6 @@ router.get("/report", requireAuth, async (req, res, next) => {
         createdAt: l.createdAt,
       })),
     });
-  } catch (err) {
-    next(err);
-  }
-});
-
-// ── DELETE /api/inventory/log/:id — Delete a single log entry + its permit ───
-router.delete("/log/:id", requireAuth, async (req, res, next) => {
-  try {
-    const { id } = req.params;
-
-    const log = await prisma.inventoryLog.findUnique({ where: { id } });
-    if (!log) {
-      res.status(404).json({ error: "Log entry not found" });
-      return;
-    }
-
-    if (log.referenceType === "withdrawal" && log.referenceId) {
-      await prisma.withdrawalItem.deleteMany({ where: { permitId: log.referenceId } });
-      await prisma.withdrawalPermit.delete({ where: { id: log.referenceId } });
-    } else if (log.referenceType === "supply" && log.referenceId) {
-      await prisma.supplyItem.deleteMany({ where: { permitId: log.referenceId } });
-      await prisma.supplyPermit.delete({ where: { id: log.referenceId } });
-    }
-
-    await prisma.inventoryLog.delete({ where: { id } });
-
-    res.json({ success: true });
-  } catch (err) {
-    next(err);
-  }
-});
-
-// ── DELETE /api/inventory/log — Delete ALL logs and permits ───────────────────
-router.delete("/log", requireAuth, async (req, res, next) => {
-  try {
-    await prisma.withdrawalItem.deleteMany();
-    await prisma.supplyItem.deleteMany();
-    await prisma.withdrawalPermit.deleteMany();
-    await prisma.supplyPermit.deleteMany();
-    const { count } = await prisma.inventoryLog.deleteMany();
-
-    res.json({ success: true, deleted: count });
   } catch (err) {
     next(err);
   }

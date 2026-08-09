@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { prisma } from "../config/database";
-import { requireAuth } from "../middleware/auth";
+import { requireAuth, requirePermission } from "../middleware/auth";
 
 const router = Router();
 
@@ -55,7 +55,7 @@ router.get("/stocktake/sessions/:id", requireAuth, async (req, res, next) => {
 });
 
 // ── POST /api/inventory/stocktake/sessions ──────────────────────────────────
-router.post("/stocktake/sessions", requireAuth, async (req: any, res, next) => {
+router.post("/stocktake/sessions", requireAuth, requirePermission("stocktake.create"), async (req: any, res, next) => {
   try {
     const { name, notes, items } = req.body;
     if (!name) { res.status(400).json({ error: "Name is required" }); return; }
@@ -89,7 +89,7 @@ router.post("/stocktake/sessions", requireAuth, async (req: any, res, next) => {
 });
 
 // ── PATCH /api/inventory/stocktake/sessions/:id ─────────────────────────────
-router.patch("/stocktake/sessions/:id", requireAuth, async (req: any, res, next) => {
+router.patch("/stocktake/sessions/:id", requireAuth, requirePermission("stocktake.create"), async (req: any, res, next) => {
   try {
     const { name, status, notes, items } = req.body;
     const existing = await prisma.stocktakeSession.findUnique({ where: { id: req.params.id } });
@@ -131,7 +131,7 @@ router.patch("/stocktake/sessions/:id", requireAuth, async (req: any, res, next)
 });
 
 // ── POST /api/inventory/stocktake/sessions/:id/approve ──────────────────────
-router.post("/stocktake/sessions/:id/approve", requireAuth, async (req: any, res, next) => {
+router.post("/stocktake/sessions/:id/approve", requireAuth, requirePermission("stocktake.approve"), async (req: any, res, next) => {
   try {
     const session = await prisma.stocktakeSession.findUnique({
       where: { id: req.params.id },
@@ -202,7 +202,7 @@ router.post("/stocktake/sessions/:id/approve", requireAuth, async (req: any, res
 });
 
 // ── DELETE /api/inventory/stocktake/sessions/:id ────────────────────────────
-router.delete("/stocktake/sessions/:id", requireAuth, async (req, res, next) => {
+router.delete("/stocktake/sessions/:id", requireAuth, requirePermission("stocktake.approve"), async (req, res, next) => {
   try {
     await prisma.stocktakeSession.delete({ where: { id: req.params.id } });
     res.json({ success: true });
