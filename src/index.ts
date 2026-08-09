@@ -8,13 +8,30 @@ import productsRouter from "./routes/products";
 import permitsRouter from "./routes/permits";
 import logRouter from "./routes/log";
 import scanRouter from "./routes/scan";
+import stocktakeRouter from "./routes/stocktake";
 import usersRouter from "./routes/users";
 import rolesRouter from "./routes/roles";
+import barcodeRouter from "./routes/barcode";
+import suppliersRouter from "./routes/suppliers";
+import purchaseOrdersRouter from "./routes/purchase-orders";
+import clientsRouter from "./routes/clients";
+import csvRouter from "./routes/csv";
+import reportsRouter from "./routes/reports";
+import reservationsRouter from "./routes/reservations";
+import salesOrdersRouter from "./routes/sales-orders";
+import returnsRouter from "./routes/returns";
+import notificationsRouter from "./routes/notifications";
 
 import { errorHandler } from "./middleware/errorHandler";
 import { initKeyManager } from "./utils/keyManager";
 import { DEFAULT_ROLES } from "./utils/permissions";
 import { prisma } from "./config/database";
+import { seedBarcodes } from "./utils/barcode";
+import { apiLimiter, authLimiter, scanLimiter, importLimiter } from "./middleware/rateLimiter";
+import { initSentry, captureException } from "./utils/sentry";
+
+// ─── Init Sentry ──────────────────────────────────────────────────────────────
+initSentry();
 
 // ─── Init Key Manager ────────────────────────────────────────────────────────
 const apiKeys = process.env.GEMINI_API_KEYS || process.env.GEMINI_API_KEY || "";
@@ -35,6 +52,19 @@ async function seedRoles() {
           },
         });
         console.log(`  ✅ Created role: ${name}`);
+      } else {
+        const currentPerms = JSON.parse(exists.permissions);
+        const desiredPerms = config.permissions;
+        const needsUpdate =
+          currentPerms.length !== desiredPerms.length ||
+          !desiredPerms.every((p: string) => currentPerms.includes(p));
+        if (needsUpdate) {
+          await prisma.roleConfig.update({
+            where: { name },
+            data: { permissions: JSON.stringify(desiredPerms) },
+          });
+          console.log(`  🔄 Updated role: ${name} (${currentPerms.length} → ${desiredPerms.length} permissions)`);
+        }
       }
     }
     const firstUser = await prisma.user.findFirst({ where: { roleId: null } });
@@ -52,7 +82,10 @@ async function seedRoles() {
 
 const app = express();
 
-// ─── CORS ─────────────────────────────────────────────────────────────────────
+// ─── Trust proxy (Railway, Heroku, etc.) ─────────────────────────────────────
+app.set("trust proxy", 1);
+
+// ─── Sentry Request/Tracing Middleware ────────────────────────────────────────
 app.use(
   cors({
     origin: [
@@ -90,21 +123,42 @@ app.get("/health", async (_req, res) => {
   }
 });
 
-// ─── Routes ───────────────────────────────────────────────────────────────────
-app.use("/api/inventory/auth", authRouter);
-app.use("/api/inventory", productsRouter);
-app.use("/api/inventory", permitsRouter);
-app.use("/api/inventory", logRouter);
-app.use("/api/inventory", scanRouter);
-app.use("/api/inventory", usersRouter);
-app.use("/api/inventory", rolesRouter);
+// ─── Routes (with rate limiting) ─────────────────────────────────────────────
+app.use("/api/inventory/auth", authLimiter, authRouter);
+app.use("/api/inventory", apiLimiter, productsRouter);
+app.use("/api/inventory", apiLimiter, permitsRouter);
+app.use("/api/inventory", apiLimiter, logRouter);
+app.use("/api/inventory", scanLimiter, scanRouter);
+app.use("/api/inventory", apiLimiter, stocktakeRouter);
+app.use("/api/inventory", apiLimiter, usersRouter);
+app.use("/api/inventory", apiLimiter, rolesRouter);
+app.use("/api/inventory", apiLimiter, barcodeRouter);
+app.use("/api/inventory", apiLimiter, suppliersRouter);
+app.use("/api/inventory", apiLimiter, purchaseOrdersRouter);
+app.use("/api/inventory", apiLimiter, clientsRouter);
+app.use("/api/inventory", importLimiter, csvRouter);
+app.use("/api/inventory", apiLimiter, reportsRouter);
+app.use("/api/inventory", apiLimiter, reservationsRouter);
+app.use("/api/inventory", apiLimiter, salesOrdersRouter);
+app.use("/api/inventory", apiLimiter, returnsRouter);
+app.use("/api/inventory", apiLimiter, notificationsRouter);
 
 // ─── Key Manager Status ──────────────────────────────────────────────────────
 import { getStatus, getKeyCount } from "./utils/keyManager";
 import { requireAuth } from "./middleware/auth";
+import { runManualAlertCheck } from "./utils/alerts";
 
 app.get("/api/inventory/keys/status", requireAuth, (_req, res) => {
   res.json({ keys: getStatus(), totalKeys: getKeyCount() });
+});
+
+app.post("/api/inventory/alerts/check", requireAuth, async (_req, res) => {
+  try {
+    const result = await runManualAlertCheck(prisma);
+    res.json(result);
+  } catch (err: any) {
+    res.status(500).json({ error: "Alert check failed" });
+  }
 });
 
 // ─── Static files (Production) ───────────────────────────────────────────────
@@ -144,14 +198,12 @@ const certPemPath = path.join(certDir, "cert.pem");
 const keyPemPath = path.join(certDir, "key.pem");
 
 function startServer() {
-  seedRoles().then(() => {
-    // HTTP always runs
+  seedRoles().then(() => seedBarcodes()).then(() => {
     app.listen(PORT, () => {
       console.log(`\n📦  AD Station Inventory API running on http://localhost:${PORT}`);
       console.log(`   Environment: ${process.env.NODE_ENV || "development"}\n`);
     });
 
-    // HTTPS — try PFX first, then PEM
     if (fs.existsSync(pfxPath)) {
       const pfx = fs.readFileSync(pfxPath);
       https.createServer({ pfx, passphrase: process.env.CERT_PASSPHRASE || "adstation123" }, app).listen(HTTPS_PORT, () => {
