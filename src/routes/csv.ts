@@ -161,6 +161,7 @@ router.get(
   async (_req, res) => {
     try {
       const products = await prisma.product.findMany({
+        where: { deletedAt: null },
         orderBy: { name: "asc" },
       });
       const rows = products.map((p) => ({
@@ -305,6 +306,14 @@ router.post(
               importErrors.push({
                 row: i + 2,
                 message: `SKU "${row.sku}" not found — skipped`,
+              });
+              skipped++;
+              continue;
+            }
+            if (existing.deletedAt) {
+              importErrors.push({
+                row: i + 2,
+                message: `SKU "${row.sku}" is archived — cannot update`,
               });
               skipped++;
               continue;

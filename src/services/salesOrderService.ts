@@ -7,6 +7,7 @@ type Tx = Prisma.TransactionClient;
 export interface ServiceUser {
   userId: string;
   name?: string;
+  role?: string;
 }
 
 export interface RequestMeta {
@@ -248,7 +249,7 @@ export async function createOrder(client: PrismaClient, input: CreateOrderInput,
 
   return runTx(client, async (tx) => {
     const orderNumber = await generateOrderNumber(tx);
-    const products = await tx.product.findMany({ where: { id: { in: input.items.map((i) => i.productId) } } });
+    const products = await tx.product.findMany({ where: { id: { in: input.items.map((i) => i.productId) }, deletedAt: null } });
     const productMap = new Map(products.map((p) => [p.id, p]));
     for (const it of input.items) {
       if (!productMap.has(it.productId)) throw new SalesOrderError(`Product not found: ${it.productId}`, 404);
@@ -323,7 +324,7 @@ export async function updateOrder(client: PrismaClient, id: string, input: Updat
       throw new SalesOrderError("Order was modified by another user. Refresh and retry.", 409);
     }
 
-    const products = await tx.product.findMany({ where: { id: { in: input.items.map((i) => i.productId) } } });
+    const products = await tx.product.findMany({ where: { id: { in: input.items.map((i) => i.productId) }, deletedAt: null } });
     const productMap = new Map(products.map((p) => [p.id, p]));
     for (const it of input.items) {
       if (!productMap.has(it.productId)) throw new SalesOrderError(`Product not found: ${it.productId}`, 404);
@@ -415,7 +416,7 @@ async function executeConfirmedTransition(
   if (!fresh) throw new SalesOrderError("Sales order not found", 404);
   if (fresh.status !== "draft") throw new SalesOrderError(`Cannot confirm order in status ${fresh.status}`, 409);
 
-  const products = await tx.product.findMany({ where: { id: { in: productIds } } });
+  const products = await tx.product.findMany({ where: { id: { in: productIds }, deletedAt: null } });
   const productMap = new Map(products.map((p) => [p.id, p]));
 
   for (const item of fresh.items) {
@@ -453,6 +454,13 @@ async function executeConfirmedTransition(
         notes: `حجز ${item.orderedQty} وحدة من ${product.name} للطلب ${order.orderNumber}`,
         referenceType: "sales_order",
         referenceId: order.id,
+        userId: user.userId,
+        userName: user.name,
+        userRole: user.role,
+        entityType: "sales_order",
+        entityId: order.id,
+        beforeData: { stock: product.stock, reservedStock: product.reservedStock },
+        afterData: { stock: product.stock, reservedStock: (product.reservedStock ?? 0) + item.orderedQty },
       },
     });
     await tx.reservation.create({
@@ -826,6 +834,13 @@ export async function deliverOrder(client: PrismaClient, id: string, input: Deli
           notes: `صرف ${qty} وحدة من ${product.name} للتوصيل للطلب ${order.orderNumber}`,
           referenceType: "sales_order",
           referenceId: order.id,
+          userId: user.userId,
+          userName: user.name,
+          userRole: user.role,
+          entityType: "sales_order",
+          entityId: order.id,
+          beforeData: { stock: product.stock, reservedStock: product.reservedStock },
+          afterData: { stock: product.stock - qty, reservedStock: (product.reservedStock ?? 0) - qty },
         },
       });
     }
@@ -961,6 +976,13 @@ export async function cancelOrder(client: PrismaClient, id: string, user: Servic
           notes: `إلغاء حجز ${qty} وحدة من ${product?.name || productId} للطلب ${order.orderNumber}`,
           referenceType: "sales_order",
           referenceId: order.id,
+          userId: user.userId,
+          userName: user.name,
+          userRole: user.role,
+          entityType: "sales_order",
+          entityId: order.id,
+          beforeData: { reservedStock: product?.reservedStock ?? 0 },
+          afterData: { reservedStock: Math.max((product?.reservedStock ?? 0) - qty, 0) },
         },
       });
     }
@@ -1042,6 +1064,13 @@ export async function expireSalesOrders(client: PrismaClient): Promise<number> {
             notes: `إلغاء حجز ${qty} وحدة من ${product?.name || productId} للطلب ${order.orderNumber} لانتهاء الصلاحية`,
             referenceType: "sales_order",
             referenceId: order.id,
+            userId: "system",
+            userName: "system",
+            userRole: "system",
+            entityType: "sales_order",
+            entityId: order.id,
+            beforeData: { reservedStock: product?.reservedStock ?? 0 },
+            afterData: { reservedStock: Math.max((product?.reservedStock ?? 0) - qty, 0) },
           },
         });
       }

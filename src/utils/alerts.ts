@@ -105,7 +105,7 @@ export async function checkAndSendAlerts(products: LowStockProduct[]): Promise<v
 // ── Get all currently low-stock products (for manual check / API) ────────────
 export async function getLowStockProducts(prisma: any): Promise<LowStockProduct[]> {
   return prisma.product.findMany({
-    where: { stock: { lte: prisma.product.fields?.minStock || 5 } },
+    where: { deletedAt: null, stock: { lte: prisma.product.fields?.minStock || 5 } },
     select: { id: true, name: true, stock: true, minStock: true, category: true },
   }) as Promise<LowStockProduct[]>;
 }
@@ -113,6 +113,7 @@ export async function getLowStockProducts(prisma: any): Promise<LowStockProduct[
 // ── Manual check endpoint helper ─────────────────────────────────────────────
 export async function runManualAlertCheck(prisma: any): Promise<{ sent: boolean; count: number }> {
   const products = await prisma.product.findMany({
+    where: { deletedAt: null },
     select: { id: true, name: true, stock: true, minStock: true, category: true },
   });
   const lowStock = products.filter((p: any) => p.stock <= p.minStock);

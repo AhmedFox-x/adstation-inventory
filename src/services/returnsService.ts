@@ -6,6 +6,7 @@ type Tx = Prisma.TransactionClient;
 export interface ServiceUser {
   userId: string;
   name?: string;
+  role?: string;
 }
 
 export interface RequestMeta {
@@ -384,7 +385,7 @@ export async function createReturn(client: PrismaClient, input: CreateReturnInpu
   return runTx(client, async (tx) => {
     const capacity = await checkItemsAgainstSource(tx, input.sourceType, input.sourceId, input.items);
     await validateWarehouseConsistency(tx, warehouseDestination, input.items);
-    const products = await tx.product.findMany({ where: { id: { in: input.items.map((i) => i.productId) } } });
+    const products = await tx.product.findMany({ where: { id: { in: input.items.map((i) => i.productId) }, deletedAt: null } });
     const productMap = new Map(products.map((p) => [p.id, p]));
     for (const it of input.items) {
       if (!productMap.has(it.productId)) throw new ReturnError(`Product not found: ${it.productId}`, 404);
@@ -490,7 +491,7 @@ export async function updateReturn(client: PrismaClient, id: string, input: Upda
 
     const capacity = await checkItemsAgainstSource(tx, input.sourceType, input.sourceId, input.items, id);
     await validateWarehouseConsistency(tx, warehouseDestination, input.items);
-    const products = await tx.product.findMany({ where: { id: { in: input.items.map((i) => i.productId) } } });
+    const products = await tx.product.findMany({ where: { id: { in: input.items.map((i) => i.productId) }, deletedAt: null } });
     const productMap = new Map(products.map((p) => [p.id, p]));
     for (const it of input.items) {
       if (!productMap.has(it.productId)) throw new ReturnError(`Product not found: ${it.productId}`, 404);
@@ -759,6 +760,13 @@ export async function receiveReturn(client: PrismaClient, id: string, input: Rec
           notes: note,
           referenceType: "returns",
           referenceId: fresh.id,
+          userId: user.userId,
+          userName: user.name,
+          userRole: user.role,
+          entityType: "return",
+          entityId: fresh.id,
+          beforeData: { stock: before },
+          afterData: { stock: after },
         },
       });
     }

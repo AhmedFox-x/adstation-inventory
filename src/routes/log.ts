@@ -7,10 +7,20 @@ const router = Router();
 // ── GET /api/inventory/log ────────────────────────────────────────────────────
 router.get("/log", requireAuth, requirePermission("logs.view"), async (req, res, next) => {
   try {
-    const { date, type, search, page = "1", limit = "20" } = req.query as Record<string, string>;
+    const {
+      date, from, to, type, search, userId, entityType, productId,
+      page = "1", limit = "20",
+    } = req.query as Record<string, string>;
     const where: any = {};
 
-    if (date) {
+    // Date filtering: single date OR from/to range
+    if (from && to) {
+      const dayStart = new Date(from);
+      dayStart.setHours(0, 0, 0, 0);
+      const dayEnd = new Date(to);
+      dayEnd.setHours(23, 59, 59, 999);
+      where.createdAt = { gte: dayStart, lte: dayEnd };
+    } else if (date) {
       const dayStart = new Date(date);
       dayStart.setHours(0, 0, 0, 0);
       const dayEnd = new Date(date);
@@ -22,9 +32,24 @@ router.get("/log", requireAuth, requirePermission("logs.view"), async (req, res,
       where.type = type;
     }
 
+    // Filter by actor (user)
+    if (userId) {
+      where.userId = userId;
+    }
+
+    // Filter by unified entity type (product, sales_order, purchase_order, return, reservation, stocktake, permit)
+    if (entityType && entityType !== "all") {
+      where.entityType = entityType;
+    }
+
+    // Filter by product directly
+    if (productId) {
+      where.productId = productId;
+    }
+
     if (search) {
       // Search by product name
-      const productWhere = { name: { contains: search } };
+      const productWhere = { name: { contains: search, mode: "insensitive" as const } };
 
       // Also search by permit number — find matching permit IDs
       const [matchingWithdrawals, matchingSupplies] = await Promise.all([
@@ -63,8 +88,11 @@ router.get("/log", requireAuth, requirePermission("logs.view"), async (req, res,
       ];
     }
 
-    const skip = (Number(page) - 1) * Number(limit);
-    const take = Number(limit);
+    // Hard pagination bounds — prevent abuse (page=99999, limit=-1)
+    const pageNum = Math.max(Number(page) || 1, 1);
+    const limitNum = Math.min(Math.max(Number(limit) || 20, 1), 200);
+    const skip = (pageNum - 1) * limitNum;
+    const take = limitNum;
 
     const [logs, total] = await Promise.all([
       prisma.inventoryLog.findMany({
@@ -101,12 +129,21 @@ router.get("/log", requireAuth, requirePermission("logs.view"), async (req, res,
           id: l.id,
           type: l.type,
           permitNumber: permitNumberOrig || permitNumber,
+          productId: l.productId,
+          productName: l.product.name,
           oldStock: l.oldStock,
           newStock: l.newStock,
           change: l.change,
           notes: l.notes === "via scan" ? null : l.notes,
           referenceType: l.referenceType,
           referenceId: l.referenceId,
+          userId: l.userId,
+          userName: l.userName,
+          userRole: l.userRole,
+          entityType: l.entityType,
+          entityId: l.entityId,
+          beforeData: l.beforeData,
+          afterData: l.afterData,
           createdAt: l.createdAt,
         };
       })
@@ -115,12 +152,96 @@ router.get("/log", requireAuth, requirePermission("logs.view"), async (req, res,
     res.json({
       logs: logsWithPermit,
       pagination: {
-        page: Number(page),
+        page: pageNum,
         limit: take,
         total,
         pages: Math.ceil(total / take),
       },
     });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ── GET /api/inventory/log/export — CSV export for reports/audit ──────────────
+router.get("/log/export", requireAuth, requirePermission("reports.export"), async (req, res, next) => {
+  try {
+    const {
+      date, from, to, type, search, userId, entityType, productId,
+    } = req.query as Record<string, string>;
+    const where: any = {};
+
+    if (from && to) {
+      const dayStart = new Date(from);
+      dayStart.setHours(0, 0, 0, 0);
+      const dayEnd = new Date(to);
+      dayEnd.setHours(23, 59, 59, 999);
+      where.createdAt = { gte: dayStart, lte: dayEnd };
+    } else if (date) {
+      const dayStart = new Date(date);
+      dayStart.setHours(0, 0, 0, 0);
+      const dayEnd = new Date(date);
+      dayEnd.setHours(23, 59, 59, 999);
+      where.createdAt = { gte: dayStart, lte: dayEnd };
+    }
+
+    if (type && type !== "all") where.type = type;
+    if (userId) where.userId = userId;
+    if (entityType && entityType !== "all") where.entityType = entityType;
+    if (productId) where.productId = productId;
+    if (search) {
+      const productWhere = { name: { contains: search, mode: "insensitive" as const } };
+      const [matchingWithdrawals, matchingSupplies] = await Promise.all([
+        prisma.withdrawalPermit.findMany({
+          where: { OR: [{ permitNumber: { contains: search } }, { permitNumberOrig: { contains: search } }] },
+          select: { id: true },
+        }),
+        prisma.supplyPermit.findMany({
+          where: { OR: [{ permitNumber: { contains: search } }, { permitNumberOrig: { contains: search } }] },
+          select: { id: true },
+        }),
+      ]);
+      const permitIds = [...matchingWithdrawals.map(p => p.id), ...matchingSupplies.map(p => p.id)];
+      where.OR = [
+        { product: productWhere },
+        ...(permitIds.length > 0 ? [
+          { referenceType: "withdrawal", referenceId: { in: permitIds } },
+          { referenceType: "supply", referenceId: { in: permitIds } },
+        ] : []),
+      ];
+    }
+
+    const logs = await prisma.inventoryLog.findMany({
+      where,
+      include: { product: { select: { name: true, sku: true, variant: true } } },
+      orderBy: { createdAt: "desc" },
+      take: 10000,
+    });
+
+    const esc = (v: unknown): string => {
+      const s = v === null || v === undefined ? "" : String(v);
+      return `"${s.replace(/"/g, '""')}"`;
+    };
+
+    const header = [
+      "id", "createdAt", "type", "userId", "userName", "userRole",
+      "entityType", "entityId", "productId", "productName", "productSku",
+      "oldStock", "newStock", "change", "clientName", "salesName",
+      "referenceType", "referenceId", "notes",
+    ];
+
+    const rows = logs.map((l) => [
+      l.id, l.createdAt.toISOString(), l.type, l.userId || "", l.userName || "", l.userRole || "",
+      l.entityType || "", l.entityId || "", l.productId, l.product.name, l.product.sku || "",
+      l.oldStock, l.newStock, l.change, l.clientName || "", l.salesName || "",
+      l.referenceType || "", l.referenceId || "", l.notes || "",
+    ]);
+
+    const csv = [header, ...rows].map((r) => r.map(esc).join(",")).join("\r\n");
+
+    res.setHeader("Content-Type", "text/csv; charset=utf-8");
+    res.setHeader("Content-Disposition", `attachment; filename="audit-log-${new Date().toISOString().slice(0, 10)}.csv"`);
+    res.send("\uFEFF" + csv);
   } catch (err) {
     next(err);
   }
@@ -227,6 +348,13 @@ router.get("/log/:id", requireAuth, requirePermission("logs.view"), async (req, 
       notes: log.notes,
       referenceType: log.referenceType,
       referenceId: log.referenceId,
+      userId: log.userId,
+      userName: log.userName,
+      userRole: log.userRole,
+      entityType: log.entityType,
+      entityId: log.entityId,
+      beforeData: log.beforeData,
+      afterData: log.afterData,
       createdAt: log.createdAt,
       permit,
       items,
@@ -330,6 +458,11 @@ router.get("/report", requireAuth, requirePermission("reports.view"), async (req
         notes: l.notes,
         referenceType: l.referenceType,
         referenceId: l.referenceId,
+        userId: l.userId,
+        userName: l.userName,
+        userRole: l.userRole,
+        entityType: l.entityType,
+        entityId: l.entityId,
         createdAt: l.createdAt,
       })),
     });

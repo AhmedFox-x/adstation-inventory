@@ -126,7 +126,7 @@ router.post("/purchase-orders", requireAuth, requirePermission("purchase_orders.
     if (!supplier) { res.status(404).json({ error: "Supplier not found" }); return; }
 
     const productIds = items.map((i: POItemInput) => i.productId);
-    const products = await prisma.product.findMany({ where: { id: { in: productIds } } });
+    const products = await prisma.product.findMany({ where: { id: { in: productIds }, deletedAt: null } });
     if (products.length !== productIds.length) { res.status(400).json({ error: "One or more products not found" }); return; }
 
     const orderNumber = await generateOrderNumber();
@@ -390,9 +390,16 @@ router.post("/purchase-orders/:id/receive", requireAuth, requirePermission("purc
               change: u.acceptedQty,
               oldStock: 0,
               newStock: u.acceptedQty,
-              notes: `استلام طلب شراء ${order.orderNumber} — ${productBefore?.name || ""}`,
+              notes: `استلام وارد أمر الشراء ${order.orderNumber} — ${productBefore?.name || ""}`,
               referenceType: "purchase_order",
               referenceId: order.id,
+              userId: req.user?.userId,
+              userName: req.user?.name,
+              userRole: req.user?.role,
+              entityType: "purchase_order",
+              entityId: order.id,
+              beforeData: { stock: 0 },
+              afterData: { stock: u.acceptedQty },
             },
           });
         }

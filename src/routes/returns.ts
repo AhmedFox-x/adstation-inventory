@@ -23,6 +23,7 @@ function metaOf(req: AuthRequest) {
   return {
     userId: req.user?.userId || "",
     name: req.user?.name || req.user?.email || "",
+    role: req.user?.role,
     ip: req.ip,
     userAgent: req.get("user-agent"),
   };

@@ -59,6 +59,7 @@ model Product {
   brand          String?
   price          Float?   @default(0)
   imageUrl       String?
+  deletedAt      DateTime?
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
@@ -168,9 +169,21 @@ model InventoryLog {
   notes         String?
   referenceType String?
   referenceId   String?
+  userId        String?
+  userName      String?
+  userRole      String?
+  entityType    String?
+  entityId      String?
+  beforeData    Json?
+  afterData     Json?
   createdAt     DateTime @default(now())
 
   product Product @relation(fields: [productId], references: [id])
+
+  @@index([userId])
+  @@index([entityType, entityId])
+  @@index([type])
+  @@index([createdAt])
 }
 
 model StocktakeSession {

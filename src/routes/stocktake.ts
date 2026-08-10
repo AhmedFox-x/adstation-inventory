@@ -149,7 +149,7 @@ router.post("/stocktake/sessions/:id/approve", requireAuth, requirePermission("s
     const logs: any[] = [];
 
     for (const item of countable) {
-      const product = await prisma.product.findUnique({ where: { id: item.productId } });
+      const product = await prisma.product.findFirst({ where: { id: item.productId, deletedAt: null } });
       if (!product) continue;
 
       const oldStock = product.stock;
@@ -173,6 +173,13 @@ router.post("/stocktake/sessions/:id/approve", requireAuth, requirePermission("s
           notes: item.note || null,
           referenceType: "stocktake",
           referenceId: session.id,
+          userId: req.user?.userId,
+          userName: req.user?.name,
+          userRole: req.user?.role,
+          entityType: "stocktake",
+          entityId: session.id,
+          beforeData: { stock: oldStock },
+          afterData: { stock: newStock },
         },
       });
 

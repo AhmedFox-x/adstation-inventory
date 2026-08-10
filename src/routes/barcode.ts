@@ -14,8 +14,8 @@ router.get("/products/barcode/:barcode", requireAuth, async (req, res) => {
       return;
     }
 
-    const product = await prisma.product.findUnique({
-      where: { barcode: barcode.trim() },
+    const product = await prisma.product.findFirst({
+      where: { barcode: barcode.trim(), deletedAt: null },
       select: {
         id: true,
         name: true,
@@ -52,6 +52,10 @@ router.post("/products/:id/regenerate-barcode", requireAuth, requirePermission("
       res.status(404).json({ error: "Product not found" });
       return;
     }
+    if (product.deletedAt) {
+      res.status(403).json({ error: "Archived products cannot be modified" });
+      return;
+    }
 
     const newBarcode = await generateUniqueBarcode();
     await prisma.product.update({
@@ -72,7 +76,7 @@ router.post("/products/:id/regenerate-barcode", requireAuth, requirePermission("
 router.post("/products/seed-barcodes", requireAuth, requirePermission("products.edit"), async (req: AuthRequest, res) => {
   try {
     const products = await prisma.product.findMany({
-      where: { barcode: null },
+      where: { barcode: null, deletedAt: null },
       select: { id: true },
     });
 

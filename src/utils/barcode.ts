@@ -24,7 +24,7 @@ export async function generateUniqueBarcode(): Promise<string> {
  */
 export async function seedBarcodes(): Promise<number> {
   const products = await prisma.product.findMany({
-    where: { barcode: null },
+    where: { barcode: null, deletedAt: null },
     select: { id: true },
   });
 

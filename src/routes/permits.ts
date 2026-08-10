@@ -24,7 +24,7 @@ router.post("/withdraw", requireAuth, requirePermission("permits.withdraw"), asy
     // Validate all items exist and have IDs
     const productIds = items.map((it: any) => it.productId);
     const products = await prisma.product.findMany({
-      where: { id: { in: productIds } },
+      where: { id: { in: productIds }, deletedAt: null },
     });
     const productMap = new Map(products.map((p) => [p.id, p]));
 
@@ -128,6 +128,13 @@ router.post("/withdraw", requireAuth, requirePermission("permits.withdraw"), asy
             notes: notes || null,
             referenceType: "withdrawal",
             referenceId: p.id,
+            userId: req.user?.userId,
+            userName: req.user?.name,
+            userRole: req.user?.role,
+            entityType: "permit",
+            entityId: p.id,
+            beforeData: { stock: before },
+            afterData: { stock: after },
           },
         });
       }
@@ -153,7 +160,7 @@ router.post("/withdraw", requireAuth, requirePermission("permits.withdraw"), asy
     const affectedProductIds = items.filter((it: any) => it.actual > 0).map((it: any) => it.productId);
     if (affectedProductIds.length > 0) {
       prisma.product.findMany({
-        where: { id: { in: affectedProductIds } },
+        where: { id: { in: affectedProductIds }, deletedAt: null },
         select: { id: true, name: true, stock: true, minStock: true, category: true },
       }).then(checkAndSendAlerts).catch(() => {});
     }
@@ -186,7 +193,7 @@ router.post("/supply", requireAuth, requirePermission("permits.supply"), async (
       if (items && items.length > 0) {
         const productIds = items.map((it: any) => it.productId);
         const products = await tx.product.findMany({
-          where: { id: { in: productIds } },
+          where: { id: { in: productIds }, deletedAt: null },
         });
         const productMap = new Map(products.map((pr) => [pr.id, pr]));
 
@@ -232,6 +239,13 @@ router.post("/supply", requireAuth, requirePermission("permits.supply"), async (
               notes: notes || null,
               referenceType: "supply",
               referenceId: p.id,
+              userId: req.user?.userId,
+              userName: req.user?.name,
+              userRole: req.user?.role,
+              entityType: "permit",
+              entityId: p.id,
+              beforeData: { stock: before },
+              afterData: { stock: after },
             },
           });
         }
@@ -271,6 +285,13 @@ router.post("/supply", requireAuth, requirePermission("permits.supply"), async (
               notes: notes || null,
               referenceType: "supply",
               referenceId: p.id,
+              userId: req.user?.userId,
+              userName: req.user?.name,
+              userRole: req.user?.role,
+              entityType: "permit",
+              entityId: p.id,
+              beforeData: { stock: 0 },
+              afterData: { stock: qty },
             },
           });
         }

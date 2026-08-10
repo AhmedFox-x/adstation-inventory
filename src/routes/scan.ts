@@ -26,6 +26,7 @@ router.post("/scan", scanLimiter, requireAuth, requirePermission("scan.use"), as
 
     // Get all products for fuzzy matching
     const products = await prisma.product.findMany({
+      where: { deletedAt: null },
       select: { id: true, name: true, variant: true, stock: true },
     });
 
@@ -104,7 +105,7 @@ router.post("/scan/confirm", scanLimiter, requireAuth, requirePermission("scan.u
       // Execute as withdrawal
       const productIds = items.map((it: any) => it.productId).filter(Boolean);
       const products = await prisma.product.findMany({
-        where: { id: { in: productIds } },
+        where: { id: { in: productIds }, deletedAt: null },
       });
       const productMap = new Map(products.map((p) => [p.id, p]));
 
@@ -203,6 +204,13 @@ router.post("/scan/confirm", scanLimiter, requireAuth, requirePermission("scan.u
               notes: notes || null,
               referenceType: "withdrawal",
               referenceId: p.id,
+              userId: req.user?.userId,
+              userName: req.user?.name,
+              userRole: req.user?.role,
+              entityType: "permit",
+              entityId: p.id,
+              beforeData: { stock: before },
+              afterData: { stock: after },
             },
           });
 
@@ -295,6 +303,13 @@ router.post("/scan/confirm", scanLimiter, requireAuth, requirePermission("scan.u
               notes: notes || null,
               referenceType: "supply",
               referenceId: p.id,
+              userId: req.user?.userId,
+              userName: req.user?.name,
+              userRole: req.user?.role,
+              entityType: "permit",
+              entityId: p.id,
+              beforeData: { stock: before },
+              afterData: { stock: after },
             },
           });
 

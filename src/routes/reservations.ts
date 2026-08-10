@@ -79,7 +79,7 @@ router.post("/reservations", requireAuth, requirePermission("reservations.create
       return;
     }
 
-    const product = await prisma.product.findUnique({ where: { id: productId } });
+    const product = await prisma.product.findFirst({ where: { id: productId, deletedAt: null } });
     if (!product) {
       res.status(404).json({ error: "Product not found" });
       return;
@@ -222,10 +222,16 @@ router.patch("/reservations/:id/fulfill", requireAuth, requirePermission("reserv
           oldStock: before,
           newStock: after,
           change: -existing.quantity,
-          clientName: existing.clientId ? undefined : undefined,
-          notes: `تم تنفيذ حجز: ${existing.id}`,
+          notes: `تنفيذ الحجز: ${existing.id}`,
           referenceType: "reservation",
           referenceId: existing.id,
+          userId: req.user?.userId,
+          userName: req.user?.name,
+          userRole: req.user?.role,
+          entityType: "reservation",
+          entityId: existing.id,
+          beforeData: { stock: before, reservedStock: existing.quantity },
+          afterData: { stock: after, reservedStock: 0 },
         },
       });
 

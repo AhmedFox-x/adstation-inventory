@@ -40,6 +40,10 @@ router.post("/products/:id/image", requireAuth, requirePermission("products.edit
       res.status(404).json({ error: "Product not found" });
       return;
     }
+    if (existing.deletedAt) {
+      res.status(403).json({ error: "Archived products cannot be edited" });
+      return;
+    }
     if (!req.file) {
       res.status(400).json({ error: "No image file provided" });
       return;
@@ -71,6 +75,10 @@ router.delete("/products/:id/image", requireAuth, requirePermission("products.ed
       res.status(404).json({ error: "Product not found" });
       return;
     }
+    if (existing.deletedAt) {
+      res.status(403).json({ error: "Archived products cannot be edited" });
+      return;
+    }
     if (existing.imageUrl) {
       const filePath = path.join(uploadsDir, path.basename(existing.imageUrl));
       if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
@@ -88,7 +96,7 @@ router.delete("/products/:id/image", requireAuth, requirePermission("products.ed
 // ── GET /api/inventory/stats ──────────────────────────────────────────────────
 router.get("/stats", requireAuth, async (_req, res, next) => {
   try {
-    const products = await prisma.product.findMany();
+    const products = await prisma.product.findMany({ where: { deletedAt: null } });
     const todayStart = new Date();
     todayStart.setHours(0, 0, 0, 0);
 
@@ -149,8 +157,8 @@ router.get("/stats", requireAuth, async (_req, res, next) => {
 // ── GET /api/inventory/products ───────────────────────────────────────────────
 router.get("/products", requireAuth, async (req, res, next) => {
   try {
-    const { search, category, page = "1", limit = "50" } = req.query as Record<string, string>;
-    const where: any = {};
+    const { search, category, page = "1", limit = "50", archived } = req.query as Record<string, string>;
+    const where: any = archived === "true" ? {} : { deletedAt: null };
 
     if (search) {
       where.OR = [
@@ -221,7 +229,7 @@ router.post("/products", requireAuth, requirePermission("products.create"), asyn
 });
 
 // ── PATCH /api/inventory/products/:id ─────────────────────────────────────────
-router.patch("/products/:id", requireAuth, requirePermission("products.edit"), async (req, res, next) => {
+router.patch("/products/:id", requireAuth, requirePermission("products.edit"), async (req: AuthRequest, res, next) => {
   try {
     const { name, variant, stock, minStock, sku, category, price, imageUrl } = req.body;
     const existing = await prisma.product.findUnique({ where: { id: req.params.id } });
@@ -229,19 +237,49 @@ router.patch("/products/:id", requireAuth, requirePermission("products.edit"), a
       res.status(404).json({ error: "Product not found" });
       return;
     }
+    if (existing.deletedAt) {
+      res.status(403).json({ error: "Archived products cannot be edited" });
+      return;
+    }
 
-    const product = await prisma.product.update({
-      where: { id: req.params.id },
-      data: {
-        ...(name !== undefined && { name: String(name).trim() }),
-        ...(variant !== undefined && { variant: variant || null }),
-        ...(stock !== undefined && { stock: Number(stock) }),
-        ...(minStock !== undefined && { minStock: Number(minStock) }),
-        ...(sku !== undefined && { sku: sku || null }),
-        ...(category !== undefined && { category: category || null }),
-        ...(price !== undefined && { price: Number(price) || 0 }),
-        ...(imageUrl !== undefined && { imageUrl: imageUrl || null }),
-      },
+    const product = await prisma.$transaction(async (tx) => {
+      const updated = await tx.product.update({
+        where: { id: req.params.id },
+        data: {
+          ...(name !== undefined && { name: String(name).trim() }),
+          ...(variant !== undefined && { variant: variant || null }),
+          ...(stock !== undefined && { stock: Number(stock) }),
+          ...(minStock !== undefined && { minStock: Number(minStock) }),
+          ...(sku !== undefined && { sku: sku || null }),
+          ...(category !== undefined && { category: category || null }),
+          ...(price !== undefined && { price: Number(price) || 0 }),
+          ...(imageUrl !== undefined && { imageUrl: imageUrl || null }),
+        },
+      });
+
+      // Audit trail: manual stock adjustment must leave a trace (same transaction as the change)
+      if (stock !== undefined && Number(stock) !== existing.stock) {
+        const user = req.user;
+        await tx.inventoryLog.create({
+          data: {
+            type: "manual_adjust",
+            productId: updated.id,
+            oldStock: existing.stock,
+            newStock: Number(stock),
+            change: Number(stock) - existing.stock,
+            userId: user?.userId,
+            userName: user?.name,
+            userRole: user?.role,
+            entityType: "product",
+            entityId: updated.id,
+            notes: "تعديل يدوي للمخزون",
+            beforeData: { stock: existing.stock, minStock: existing.minStock, price: existing.price },
+            afterData: { stock: updated.stock, minStock: updated.minStock, price: updated.price },
+          },
+        });
+      }
+
+      return updated;
     });
 
     res.json({ product });
@@ -263,18 +301,19 @@ router.delete("/products/:id", requireAuth, requirePermission("products.delete")
       return;
     }
 
-    // Delete image file if exists
-    if (existing.imageUrl) {
-      const filePath = path.join(uploadsDir, path.basename(existing.imageUrl));
-      if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+    if (existing.deletedAt) {
+      res.status(409).json({ error: "Product already archived" });
+      return;
     }
 
-    await prisma.inventoryLog.deleteMany({ where: { productId: req.params.id } });
-    await prisma.withdrawalItem.deleteMany({ where: { productId: req.params.id } });
-    await prisma.supplyItem.deleteMany({ where: { productId: req.params.id } });
-    await prisma.product.delete({ where: { id: req.params.id } });
+    // Soft delete: archive the product, preserve all history (InventoryLog, items, relations).
+    // The archived product is excluded from operational queries via deletedAt filter.
+    await prisma.product.update({
+      where: { id: req.params.id },
+      data: { deletedAt: new Date() },
+    });
 
-    res.json({ message: "Product deleted" });
+    res.json({ message: "Product archived", archived: true });
   } catch (err) {
     next(err);
   }

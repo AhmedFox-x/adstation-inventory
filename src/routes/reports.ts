@@ -14,6 +14,7 @@ const router = Router()
 router.get('/reports/value', requireAuth, requirePermission('reports.view'), async (_req, res) => {
   try {
     const products = await prisma.product.findMany({
+      where: { deletedAt: null },
       select: { id: true, name: true, variant: true, stock: true, price: true, category: true },
     })
 
@@ -64,6 +65,7 @@ router.get('/reports/value', requireAuth, requirePermission('reports.view'), asy
 router.get('/reports/abc', requireAuth, requirePermission('reports.view'), async (_req, res) => {
   try {
     const products = await prisma.product.findMany({
+      where: { deletedAt: null },
       select: { id: true, name: true, variant: true, price: true },
     })
 
