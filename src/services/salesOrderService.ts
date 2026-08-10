@@ -1,5 +1,6 @@
 import { Prisma, PrismaClient } from "@prisma/client";
 import { getReturnedQtyBySource } from "./returnsService";
+import { createNotification, createNotifications } from "./notificationService";
 
 type Tx = Prisma.TransactionClient;
 
@@ -499,36 +500,28 @@ async function executeConfirmedTransition(
   });
 
   if (!approvalId) {
-    await tx.notification.create({
-      data: {
-        userId: fresh.createdBy || user.userId,
-        type: "order_confirmed",
-        title: "تم تأكيد الطلب",
-        message: `تم تأكيد الطلب ${order.orderNumber} للعميل ${fresh.client?.name || ""}`,
-        entityType: "sales_order",
-        entityId: order.id,
-        referenceType: "sales_order",
-        referenceId: order.id,
-        priority: "normal",
-        icon: "CheckCircle2",
-        createdBySystem: true,
-      },
+    await createNotification(tx, {
+      userId: fresh.createdBy || user.userId,
+      type: "order_confirmed",
+      title: "تم تأكيد الطلب",
+      message: `تم تأكيد الطلب ${order.orderNumber} للعميل ${fresh.client?.name || ""}`,
+      entityType: "sales_order",
+      entityId: order.id,
+      referenceType: "sales_order",
+      referenceId: order.id,
+      priority: "normal",
     });
   } else {
-    await tx.notification.create({
-      data: {
-        userId: fresh.createdBy || user.userId,
-        type: "order_approved",
-        title: "تم اعتماد الطلب",
-        message: `تم اعتماد الطلب ${order.orderNumber}`,
-        entityType: "sales_order",
-        entityId: order.id,
-        referenceType: "sales_order",
-        referenceId: order.id,
-        priority: "high",
-        icon: "BadgeCheck",
-        createdBySystem: true,
-      },
+    await createNotification(tx, {
+      userId: fresh.createdBy || user.userId,
+      type: "order_approved",
+      title: "تم اعتماد الطلب",
+      message: `تم اعتماد الطلب ${order.orderNumber}`,
+      entityType: "sales_order",
+      entityId: order.id,
+      referenceType: "sales_order",
+      referenceId: order.id,
+      priority: "high",
     });
   }
 
@@ -582,23 +575,20 @@ export async function confirmOrder(client: PrismaClient, id: string, user: Servi
         },
       });
       const owners = await getActiveOwners(tx);
-      for (const owner of owners) {
-        await tx.notification.create({
-          data: {
-            userId: owner.id,
-            type: "approval_needed",
-            title: "طلب يحتاج اعتماد",
-            message: `الطلب ${order.orderNumber} من ${order.client?.name || ""} يحتاج اعتماد (قيمته ${grandTotal} ${order.currency || "EGP"})`,
-            entityType: "sales_order",
-            entityId: order.id,
-            referenceType: "sales_order",
-            referenceId: order.id,
-            priority: "high",
-            icon: "ShieldAlert",
-            createdBySystem: true,
-          },
-        });
-      }
+      await createNotifications(
+        tx,
+        owners.map((o) => o.id),
+        {
+          type: "approval_needed",
+          title: "طلب يحتاج اعتماد",
+          message: `الطلب ${order.orderNumber} من ${order.client?.name || ""} يحتاج اعتماد (قيمته ${grandTotal} ${order.currency || "EGP"})`,
+          entityType: "sales_order",
+          entityId: order.id,
+          referenceType: "sales_order",
+          referenceId: order.id,
+          priority: "high",
+        }
+      );
       return requireOrderFull(tx, order.id);
     }
 
@@ -652,20 +642,16 @@ export async function rejectOrder(client: PrismaClient, id: string, user: Servic
       },
     });
 
-    await tx.notification.create({
-      data: {
-        userId: order.createdBy || user.userId,
-        type: "order_rejected",
-        title: "تم رفض الطلب",
-        message: `تم رفض الطلب ${order.orderNumber} — ${reason}`,
-        entityType: "sales_order",
-        entityId: order.id,
-        referenceType: "sales_order",
-        referenceId: order.id,
-        priority: "urgent",
-        icon: "XCircle",
-        createdBySystem: true,
-      },
+    await createNotification(tx, {
+      userId: order.createdBy || user.userId,
+      type: "order_rejected",
+      title: "تم رفض الطلب",
+      message: `تم رفض الطلب ${order.orderNumber} — ${reason}`,
+      entityType: "sales_order",
+      entityId: order.id,
+      referenceType: "sales_order",
+      referenceId: order.id,
+      priority: "urgent",
     });
 
     return requireOrderFull(tx, order.id);
@@ -871,20 +857,16 @@ export async function deliverOrder(client: PrismaClient, id: string, input: Deli
       },
     });
 
-    await tx.notification.create({
-      data: {
-        userId: order.createdBy || user.userId,
-        type: "order_delivered",
-        title: "تم التوصيل",
-        message: `تم توصيل الطلب ${order.orderNumber}`,
-        entityType: "sales_order",
-        entityId: order.id,
-        referenceType: "sales_order",
-        referenceId: order.id,
-        priority: "normal",
-        icon: "Truck",
-        createdBySystem: true,
-      },
+    await createNotification(tx, {
+      userId: order.createdBy || user.userId,
+      type: "order_delivered",
+      title: "تم التوصيل",
+      message: `تم توصيل الطلب ${order.orderNumber}`,
+      entityType: "sales_order",
+      entityId: order.id,
+      referenceType: "sales_order",
+      referenceId: order.id,
+      priority: "normal",
     });
 
     for (const di of input.deliveredItems) {
@@ -894,23 +876,20 @@ export async function deliverOrder(client: PrismaClient, id: string, input: Deli
         const recipients = new Set<string>([order.createdBy || user.userId]);
         const owners = await getActiveOwners(tx);
         for (const o of owners) recipients.add(o.id);
-        for (const recipientId of recipients) {
-          await tx.notification.create({
-            data: {
-              userId: recipientId,
-              type: "low_stock",
-              title: "مخزون منخفض",
-              message: `المخزون من ${product.name} وصل ${product.stock - Number(di.deliveredQty)} (الحد الأدنى: ${product.minStock})`,
-              entityType: "product",
-              entityId: product.id,
-              referenceType: "product",
-              referenceId: product.id,
-              priority: "urgent",
-              icon: "AlertTriangle",
-              createdBySystem: true,
-            },
-          });
-        }
+        await createNotifications(
+          tx,
+          [...recipients],
+          {
+            type: "low_stock",
+            title: "مخزون منخفض",
+            message: `المخزون من ${product.name} وصل ${product.stock - Number(di.deliveredQty)} (الحد الأدنى: ${product.minStock})`,
+            entityType: "product",
+            entityId: product.id,
+            referenceType: "product",
+            referenceId: product.id,
+            priority: "urgent",
+          }
+        );
       }
     }
 
@@ -1086,20 +1065,16 @@ export async function expireSalesOrders(client: PrismaClient): Promise<number> {
         },
       });
 
-      await tx.notification.create({
-        data: {
-          userId: order.createdBy || undefined,
-          type: "order_expired",
-          title: "انتهت صلاحية الطلب",
-          message: `تم إلغاء الطلب ${order.orderNumber} لانتهاء صلاحيته`,
-          entityType: "sales_order",
-          entityId: order.id,
-          referenceType: "sales_order",
-          referenceId: order.id,
-          priority: "low",
-          icon: "Clock",
-          createdBySystem: true,
-        },
+      await createNotification(tx, {
+        userId: order.createdBy || undefined,
+        type: "order_expired",
+        title: "انتهت صلاحية الطلب",
+        message: `تم إلغاء الطلب ${order.orderNumber} لانتهاء صلاحيته`,
+        entityType: "sales_order",
+        entityId: order.id,
+        referenceType: "sales_order",
+        referenceId: order.id,
+        priority: "low",
       });
 
       count++;

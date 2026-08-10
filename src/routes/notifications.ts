@@ -16,8 +16,10 @@ router.get("/notifications", requireAuth, async (req: AuthRequest, res, next) =>
     };
     if (unreadOnly === "true") where.isRead = false;
 
-    const skip = (Number(page) - 1) * Number(limit);
-    const take = Number(limit);
+    const pageNum = Math.max(Number(page) || 1, 1);
+    const limitNum = Math.max(Number(limit) || 50, 1);
+    const skip = (pageNum - 1) * limitNum;
+    const take = limitNum;
 
     const [notifications, total, unread] = await Promise.all([
       prisma.notification.findMany({
@@ -34,9 +36,27 @@ router.get("/notifications", requireAuth, async (req: AuthRequest, res, next) =>
       notifications,
       total,
       unread,
-      page: Number(page),
+      page: pageNum,
       pages: Math.ceil(total / take),
+      pagination: {
+        page: pageNum,
+        limit: take,
+        total,
+        totalPages: Math.ceil(total / take),
+      },
     });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET /notifications/unread-count — عدد الإشعارات غير المقروءة
+router.get("/notifications/unread-count", requireAuth, async (req: AuthRequest, res, next) => {
+  try {
+    const count = await prisma.notification.count({
+      where: { userId: req.user?.userId, isRead: false, deletedAt: null },
+    });
+    res.json({ count });
   } catch (err) {
     next(err);
   }
@@ -72,6 +92,28 @@ router.put("/notifications/read-all", requireAuth, async (req: AuthRequest, res,
       data: { isRead: true, readAt: new Date() },
     });
     res.json({ updated: result.count });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// DELETE /notifications/:id — Soft delete (تحديث deletedAt فقط، لا حذف فعلي)
+router.delete("/notifications/:id", requireAuth, async (req: AuthRequest, res, next) => {
+  try {
+    const userId = req.user?.userId;
+    const notification = await prisma.notification.findUnique({
+      where: { id: req.params.id },
+    });
+    if (!notification || (notification.userId && notification.userId !== userId)) {
+      res.status(404).json({ error: "Notification not found" });
+      return;
+    }
+
+    const updated = await prisma.notification.update({
+      where: { id: req.params.id },
+      data: { deletedAt: new Date() },
+    });
+    res.json({ notification: updated });
   } catch (err) {
     next(err);
   }

@@ -145,9 +145,23 @@ describe('Returns Service — Customer Return Happy Path (Positive)', () => {
     expect(approvalNotif!.priority).toBe('high');
     expect(approvalNotif!.entityId).toBe(ret.id);
 
+    // إشعار إنشاء للمنشئ
+    const createdNotif = await testPrisma.notification.findFirst({ where: { type: 'return_created' } });
+    expect(createdNotif).toBeTruthy();
+    expect(createdNotif!.entityType).toBe('return_order');
+    expect(createdNotif!.entityId).toBe(ret.id);
+    expect(createdNotif!.actionUrl).toBe(`/returns?focus=${ret.id}`);
+
     const approved = await approveReturn(testPrisma, ret.id, owner);
     expect(approved.status).toBe(RETURN_STATUSES.APPROVED);
     expect(approved.approvedBy).toBe(owner.userId);
+
+    // إشعار اعتماد للمنشئ
+    const approvedNotif = await testPrisma.notification.findFirst({ where: { type: 'return_approved' } });
+    expect(approvedNotif).toBeTruthy();
+    expect(approvedNotif!.entityId).toBe(ret.id);
+    expect(approvedNotif!.icon).toBe('approval');
+    expect(approvedNotif!.actionUrl).toBe(`/returns?focus=${ret.id}`);
 
     // لا تأثير على المخزون قبل الاستلام
     let p = await testPrisma.product.findUnique({ where: { id: productId } });
@@ -173,6 +187,13 @@ describe('Returns Service — Customer Return Happy Path (Positive)', () => {
     expect(log!.referenceType).toBe('returns');
     expect(log!.referenceId).toBe(ret.id);
 
+    // إشعار استلام
+    const receivedNotif = await testPrisma.notification.findFirst({ where: { type: 'return_received' } });
+    expect(receivedNotif).toBeTruthy();
+    expect(receivedNotif!.entityId).toBe(ret.id);
+    expect(receivedNotif!.icon).toBe('return');
+    expect(receivedNotif!.actionUrl).toBe(`/returns?focus=${ret.id}`);
+
     const refunded = await refundReturn(
       testPrisma,
       ret.id,
@@ -182,9 +203,21 @@ describe('Returns Service — Customer Return Happy Path (Positive)', () => {
     expect(refunded.refundStatus).toBe('completed');
     expect(refunded.refundDueAt).toBeNull(); // completed → no due date
 
+    // إشعار استكمال الـ Refund
+    const refundNotif = await testPrisma.notification.findFirst({ where: { type: 'return_refund_completed' } });
+    expect(refundNotif).toBeTruthy();
+    expect(refundNotif!.entityId).toBe(ret.id);
+    expect(refundNotif!.icon).toBe('return');
+
     const closed = await closeReturn(testPrisma, ret.id, { resolution: 'refund' }, user);
     expect(closed.status).toBe(RETURN_STATUSES.CLOSED);
     expect(closed.resolution).toBe('refund');
+
+    // إشعار إقفال
+    const closedNotif = await testPrisma.notification.findFirst({ where: { type: 'return_closed' } });
+    expect(closedNotif).toBeTruthy();
+    expect(closedNotif!.entityId).toBe(ret.id);
+    expect(closedNotif!.icon).toBe('return');
 
     // Audit كامل
     const history = await testPrisma.returnOrderStatusHistory.findMany({ where: { returnId: ret.id } });
@@ -660,5 +693,38 @@ describe('Returns Service — Integration & Dashboard', () => {
     // idempotent — المرة التانية لا تكرر الإشعار
     const count2 = await checkRefundDelays(testPrisma);
     expect(count2).toBe(0);
+  });
+});
+
+describe('Returns Service — Transaction Rollback (P4.4)', () => {
+  beforeEach(async () => {
+    await cleanDb();
+  });
+
+  afterAll(async () => {
+    await cleanDb();
+  });
+
+  test('A failing receive leaves no return_received notification and no stock change', async () => {
+    const { ret, productId } = await makeCustomerDraft();
+    await approveReturn(testPrisma, ret.id, owner);
+
+    // item غير موجود → fail داخل الـ transaction
+    await expect(
+      receiveReturn(testPrisma, ret.id, {
+        items: [
+          { itemId: 'item-missing', receivedQty: 2 },
+        ],
+      }, user)
+    ).rejects.toThrow(/not found/i);
+
+    const receivedNotif = await testPrisma.notification.findFirst({ where: { type: 'return_received' } });
+    expect(receivedNotif).toBeNull();
+
+    const p = await testPrisma.product.findUnique({ where: { id: productId } });
+    expect(p!.stock).toBe(90); // لم يتغير
+
+    const fresh = await testPrisma.returnOrder.findUnique({ where: { id: ret.id } });
+    expect(fresh!.status).toBe(RETURN_STATUSES.APPROVED); // لم ينتقل لـ received
   });
 });

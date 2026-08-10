@@ -3,11 +3,12 @@ import { prisma } from "../config/database";
 import { requireAuth, requirePermission, AuthRequest } from "../middleware/auth";
 import { analyzeImageWithGemini } from "../utils/gemini";
 import { bestMatch } from "../utils/fuzzy";
+import { scanLimiter } from "../middleware/rateLimiter";
 
 const router = Router();
 
 // ── POST /api/inventory/scan ──────────────────────────────────────────────────
-router.post("/scan", requireAuth, requirePermission("scan.use"), async (req, res) => {
+router.post("/scan", scanLimiter, requireAuth, requirePermission("scan.use"), async (req, res) => {
   try {
     const { image, mimeType } = req.body;
 
@@ -87,7 +88,7 @@ router.post("/scan", requireAuth, requirePermission("scan.use"), async (req, res
 });
 
 // ── POST /api/inventory/scan/confirm ──────────────────────────────────────────
-router.post("/scan/confirm", requireAuth, requirePermission("scan.use"), async (req: AuthRequest, res) => {
+router.post("/scan/confirm", scanLimiter, requireAuth, requirePermission("scan.use"), async (req: AuthRequest, res) => {
   try {
     const {
       type, clientName, salesName, supplierName, notes, items,

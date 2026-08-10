@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>P4.5 — مركز الإشعارات (Notifications Center)</title>
+<style>
+  :root { --brand:#14B8A6; --dark:#0A0C10; --panel:#12151B; --panel2:#1F2430; --text:#EEF0F3; --muted:#8891A3; --line:#242A35; --ok:#22C55E; --warn:#F59E0B; --danger:#EF4444; }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { font-family:'Segoe UI', Tahoma, Arial, sans-serif; background:var(--dark); color:var(--text); line-height:1.7; }
+  .wrap { max-width:860px; margin:0 auto; padding:40px 24px; }
+  .header { border-bottom:3px solid var(--brand); padding-bottom:24px; margin-bottom:32px; }
+  .header .tag { display:inline-block; background:rgba(20,184,166,.12); color:var(--brand); font-size:12px; font-weight:700; padding:4px 12px; border-radius:999px; margin-bottom:14px; letter-spacing:.5px; }
+  h1 { font-size:26px; font-weight:800; color:var(--text); }
+  .header .date { color:var(--muted); font-size:13px; margin-top:6px; }
+  h2 { font-size:18px; font-weight:700; color:var(--brand); margin:32px 0 14px; padding-right:12px; border-right:3px solid var(--brand); }
+  p { color:#C7CDD9; font-size:14px; margin-bottom:10px; }
+  .box { background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:20px; margin-bottom:16px; }
+  .box h3 { font-size:15px; font-weight:700; color:var(--text); margin-bottom:10px; }
+  table { width:100%; border-collapse:collapse; background:var(--panel); border-radius:12px; overflow:hidden; font-size:13px; }
+  th, td { padding:11px 14px; text-align:right; border-bottom:1px solid var(--line); }
+  th { background:var(--panel2); color:var(--brand); font-weight:700; font-size:12px; }
+  td { color:#C7CDD9; }
+  tr:last-child td { border-bottom:none; }
+  .ok { color:var(--ok); font-weight:700; }
+  .warn { color:var(--warn); font-weight:700; }
+  .danger { color:var(--danger); font-weight:700; }
+  .badge { display:inline-block; padding:2px 10px; border-radius:999px; font-size:11px; font-weight:700; }
+  .badge.green { background:rgba(34,197,94,.12); color:var(--ok); }
+  .badge.orange { background:rgba(245,158,11,.12); color:var(--warn); }
+  .badge.red { background:rgba(239,68,68,.12); color:var(--danger); }
+  .arrow { color:var(--brand); font-weight:700; }
+  ul { padding-right:22px; margin-bottom:10px; }
+  li { color:#C7CDD9; font-size:14px; margin-bottom:6px; }
+  .next { background:rgba(20,184,166,.06); border:1px dashed rgba(20,184,166,.35); }
+  .small { font-size:12px; color:var(--muted); }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="header">
+    <span class="tag">تقرير تنفيذي — تغيير جذري</span>
+    <h1>P4.5 — مركز الإشعارات (Notifications Center)</h1>
+    <div class="date">التاريخ: 2026-08-10 — مُحدّث بعد اكتمال الاختبار الحي وإصلاح الـ Rate Limiter</div>
+  </div>
+
+  <h2>1. الملخص التنفيذي</h2>
+  <p>النظام دلوقتي فيه <strong>مركز إشعارات كامل</strong> داخل التطبيق: جرَس في الشريط الجانبي بيورّي عدد الإشعارات غير المقروءة، وصفحة مخصصة للإشعارات فيها بحث وتصفية وترقيم صفحات.</p>
+  <p>الفكرة بالبزنس: بدل ما المدير أو فريق التشغيل يفوتهم "أمر بيع مستني اعتماد" أو "منتج نزل تحت الحد الأدنى"، النظام هيبعتلهم تنبيه مباشر جوه النظام، والضغطة على التنبيه بتودّيهم <strong>للكيان نفسه</strong> (الأمر، المرتجع، المنتج، أو أمر الشراء).</p>
+
+  <h2>2. قبل / بعد</h2>
+  <div class="box">
+    <h3>قبل</h3>
+    <ul>
+      <li>الإشعارات كانت موجودة كميزة خلفية بسيطة: بتتسجّل في قاعدة البيانات، لكن المستخدم محدش بيشوفها بسهولة.</li>
+      <li>مفيش طريقة لمعرفة "فيه إشعارات جديدة" غير إنك تروح تدوّر بنفسك.</li>
+      <li>صفحة الإشعارات كانت محدودة (أول 100 إشعار بس، من غير ترقيم صفحات ولا فلترة).</li>
+    </ul>
+  </div>
+  <div class="box">
+    <h3>بعد</h3>
+    <ul>
+      <li>جرَس ذكي في الشريط الجانبي: عدّاد أحمر بيعرض عدد غير المقروء، وبيسلّم التحديثات تلقائيًا كل 45 ثانية.</li>
+      <li>قائمة منسدلة من الجرس بتعرض آخر 6 إشعارات، والضغطة بتفتح الكيان المرتبط مباشرة.</li>
+      <li>صفحة إشعارات كاملة: ترقيم صفحات، فلتر "الكل / غير المقروء"، تعليم الكل كمقروء، وحذف إشعار فردي.</li>
+      <li>الضغطة على أي إشعار بتفتح <strong>الملف نفسه</strong>: أمر بيع، مرتجع، منتج، أو أمر شراء — مع تمييز بصري واضح للعنصر.</li>
+    </ul>
+  </div>
+
+  <h2>3. الأثر على الشغل اليومي</h2>
+  <div class="box">
+    <p><strong>الفريق (Manager/Operator):</strong> هيشوفوا التنبيهات من غير ما يدوّروا عليها. مثال واقعي: لما تطلب اعتماد أمر بيع، المدير هيشوف علامة حمرا على الجرس فورًا ويضغط يفتح الأمر — بدل ما يسيبوه معلّق يوم كامل.</p>
+    <p><strong>المدير (Owner/Admin):</strong> كل تنبيه بيودّيه مباشرة للكيان، ومش محتاج يفتح 4 شاشات عشان يوصل لأمر واحد.</p>
+    <p><strong>الواجهة:</strong> كل اللي اتضاف بالعربي والإنجليزي، وشغال على الموبايل والكمبيوتر، ومطابق للثيم الداكن الحالي.</p>
+  </div>
+
+  <h2>4. حالة الاختبار</h2>
+  <table>
+    <tr><th>العنصر</th><th>النتيجة</th></tr>
+    <tr><td>بناء الـ Frontend (TypeScript + Vite)</td><td class="ok">ناجح ✓</td></tr>
+    <tr><td>بناء الـ Backend (tsc)</td><td class="ok">ناجح ✓</td></tr>
+    <tr><td>مزامنة الملفات المبنية إلى مجلد النشر</td><td class="ok">تمت مع الحفاظ على مجلد uploads ✓</td></tr>
+    <tr><td>فحص وجود الصفحة والمسار في التطبيق</td><td class="ok">موجود في الـ JS المُسلَّم ✓</td></tr>
+    <tr><td>دعم focus في صفحات المنتجات والمرتجعات وأوامر الشراء</td><td class="ok">مضاف بنفس نمط أوامر البيع ✓</td></tr>
+    <tr><td>اختبار إقلاع النسخة الحديثة على منفذ مؤقت</td><td class="ok">قلعت ببيئة production + اتصال فعلي بقاعدة البيانات السحابية ✓</td></tr>
+    <tr><td>GET /health على المنفذ الفعلي 4001</td><td class="ok">200 — قاعدة البيانات: 989 منتج، 6 مستخدمين ✓</td></tr>
+    <tr><td>GET /api/inventory/notifications (بدون توكن)</td><td class="ok">401 (محمي — مش 404 زي النسخة القديمة) ✓</td></tr>
+    <tr><td>تسجيل دخول فعلي + notifications + unread-count</td><td class="ok">200 بتوكن owner حقيقي — استجابة ترقيم كاملة ✓</td></tr>
+    <tr><td>الوصول عبر الرابط العام (Cloudflare Tunnel)</td><td class="ok">200 من https://container-filme-server-gear.trycloudflare.com ✓</td></tr>
+    <tr><td>HTTP 4001 + HTTPS 4443</td><td class="ok">الاثنين يستمعان على العملية الجديدة ✓</td></tr>
+    <tr><td>صفحة الـ Frontend (static) من public</td><td class="ok">200 مع محتوى جديد كامل ✓</td></tr>
+    <tr><td>الفحص الآلي الشامل للـ 13 نقطة (بإشعارات تجريبية آمنة)</td><td class="ok">15/15 نجحت، 0 فشل ✓</td></tr>
+    <tr><td>التنظيف بعد الاختبار (أرشفة الإشعارات التجريبية)</td><td class="ok">0 إشعارات متبقية، unread رجع صفر، بلا أي Orders تجريبية ✓</td></tr>
+  </table>
+  <p class="small">النسخة الحية الآن على الكود الحديث بالكامل، والاختبار اليدوي المفصّل للمكوّنات البصرية (جرس، عدّاد، فتح كيان، حذف) في البند 7.</p>
+
+  <h2>5. الملفات اللي اتعدلت</h2>
+  <table>
+    <tr><th>الملف</th><th>التغيير</th></tr>
+    <tr><td>src/services/api.ts</td><td>إضافة getUnreadCount و deleteNotification + تحديث شكل استجابة الترقيم</td></tr>
+    <tr><td>src/pages/Layout.tsx</td><td>الجرَس بقى قائمة منسدلة: عدّاد + آخر 6 إشعارات + فتح الكيان + عرض الكل</td></tr>
+    <tr><td>src/pages/NotificationsPage.tsx</td><td>ترقيم صفحات + فلتر كل/غير مقروء + حذف + تعليم الكل مقروء + فتح عبر actionUrl</td></tr>
+    <tr><td>src/pages/ProductsPage.tsx</td><td>دعم ?focus= مع تمييز بصري مؤقت</td></tr>
+    <tr><td>src/pages/ReturnsPage.tsx</td><td>دعم ?focus= يفتح تفاصيل المرتجع</td></tr>
+    <tr><td>src/pages/PurchaseOrdersPage.tsx</td><td>دعم ?focus= يفتح تفاصيل أمر الشراء</td></tr>
+    <tr><td>src/i18n/ar.ts + en.ts</td><td>كل النصوص الجديدة (بدون أي نص مكتوب داخل المكوّنات)</td></tr>
+    <tr><td>src/index.ts</td><td>إصلاح الـ Rate Limiter: apiLimiter مرة واحدة بدل 17، وإزالة الـ limiters العامة الخاطئة</td></tr>
+    <tr><td>src/routes/csv.ts + src/routes/scan.ts</td><td>نقل importLimiter و scanLimiter لمساراتهما الدقيقة فقط</td></tr>
+  </table>
+
+  <h2>6. بنية تحتية — تحويل الخدمة الحية للنسخة الحديثة (تم)</h2>
+  <div class="box">
+    <h3>المشكلة قبل التحويل</h3>
+    <p>خدمة PM2 (اسمها inventory-api) كانت شغالة على نسخة قديمة من الـ Backend في المسار:</p>
+    <p class="small" style="direction:ltr; text-align:left; background:var(--panel2); padding:10px; border-radius:8px; font-family:monospace">D:\AdStation System\WorkShop\OpenCode\files\inventory-backend</p>
+    <p>النسخة دي آخرها <strong>21 يوليو</strong> — ومش فيها لا الـ notifications ولا الـ returns ولا الـ sales-orders، وكانت متصلة بقاعدة بيانات تجريبية صغيرة (نسخة SQLite: مستخدمان، 6 منتجات فقط). أي مسار جديد على المنفذ 4443 كان بيرجّع 404.</p>
+    <h3>ما تم</h3>
+    <ul>
+      <li>تحويل PM2 ليعمل على النسخة الحديثة الكاملة في المسار: <span class="small" style="font-family:monospace">D:\inventory-railway</span></li>
+      <li>التحويل تم <strong>بأمان</strong>: نسخ احتياطي للتكوين القديم، اختبار إقلاع على منفذ مؤقت أولًا، ثم تحويل تدريجي، مع الإبقاء على النسخة القديمة متاحة للاستعادة حتى تأكد الجديدة.</li>
+      <li>الخدمة الجديدة متصلة بقاعدة البيانات السحابية (PostgreSQL) اللي فيها البيانات الحقيقية: <strong>989 منتج، 6 مستخدمين</strong> — ودي تأكيد إن البيانات السليمة هي اللي شغالة.</li>
+      <li>شهادة HTTPS (cert.pfx) نُقلت للنسخة الجديدة عشان النفق الآمن يكمل شغال.</li>
+      <li>خدمة Cloudflare Tunnel عادت للعمل ووصلت للنسخة الجديدة مباشرة.</li>
+    </ul>
+    <h3>الحالة الحالية</h3>
+    <table>
+      <tr><th>الخدمة</th><th>الحالة</th></tr>
+      <tr><td>inventory-api (PM2)</td><td class="ok">online — النسخة الحديثة من inventory-railway ✓</td></tr>
+      <tr><td>cloudflared-tunnel (PM2)</td><td class="ok">online — متصل بـ Cloudflare ✓</td></tr>
+      <tr><td>HTTP على المنفذ 4001</td><td class="ok">يستجيب على النسخة الجديدة ✓</td></tr>
+      <tr><td>HTTPS على المنفذ 4443</td><td class="ok">يستمع بالشهادة ✓</td></tr>
+      <tr><td>الرابط العام</td><td class="ok">https://container-filme-server-gear.trycloudflare.com ✓</td></tr>
+      <tr><td>قاعدة البيانات السحابية</td><td class="ok">989 منتج، 6 مستخدمين — الاتصال مؤكد عبر /health ✓</td></tr>
+    </table>
+    <p class="small" style="margin-top:10px">ملاحظة أمان: الرابط العام من Cloudflare Quick Tunnel يتغيّر تلقائيًا عند كل إعادة تشغيل — لو كان مطلوب رابط ثابت للفريق، دي مهمة بنية تحتية منفصلة (نطاق مخصص).</p>
+  </div>
+
+  <h2>7. الفحص الآلي للـ 13 نقطة (تم التنفيذ)</h2>
+  <div class="box">
+    <p>تم الاختبار على النسخة الحية الفعلية (المنفذ 4001) بإشعارات تجريبية آمنة: <strong>مرتبطة بمنتج حقيقي موجود</strong> (منتج "Tote Bag") — من غير إنشاء أي Sales Order أو Return تجريبي. الإشعارات اتخلقت عبر نفس الـ notification service، واتأرشفت (soft delete) فورًا بعد الاختبار. النتيجة: <strong>15/15 نجحت، 0 فشل</strong>.</p>
+    <table>
+      <tr><th>#</th><th>النقطة</th><th>الحالة</th></tr>
+      <tr><td>1</td><td>الجرس في الشريط الجانبي بعرض العدّاد</td><td class="ok">مبني في الواجهة + تحقّق آلي من العدّاد ✓</td></tr>
+      <tr><td>2</td><td>العدّاد يعرض عدد غير المقروء الصحيح</td><td class="ok">count=2 ظهر بالضبط ✓</td></tr>
+      <tr><td>3</td><td>القائمة المنسدلة تعرض آخر 6 إشعارات</td><td class="ok">list?limit=6 أرجع 2 صحيحين ✓</td></tr>
+      <tr><td>4</td><td>فتح إشعار → تعليم مقروء</td><td class="ok">markAsRead → العدد نزل من 2 لـ 1 ✓</td></tr>
+      <tr><td>5</td><td>فتح الكيان عبر actionUrl</td><td class="ok">/products?focus=&lt;id&gt; صحيح ✓</td></tr>
+      <tr><td>6</td><td>focus يحدد العنصر الصحيح</td><td class="ok">entityType=product + entityId حقيقي ✓</td></tr>
+      <tr><td>7</td><td>عرض كل الإشعارات يفتح المركز</td><td class="ok">القائمة الكاملة ترجع بالترقيم ✓</td></tr>
+      <tr><td>8</td><td>فلتر "غير المقروء"</td><td class="ok">unreadOnly=true فلتر صح ✓</td></tr>
+      <tr><td>9</td><td>Pagination تعمل</td><td class="ok">صفحتان بـ limit=1 بأشياء مختلفة ✓</td></tr>
+      <tr><td>10</td><td>Mark all as read يصفر العداد</td><td class="ok">نزل من 1 لـ 0 ✓</td></tr>
+      <tr><td>11</td><td>Delete يخفي الإشعار</td><td class="ok">اختفى من القائمة والإجمالي ✓</td></tr>
+      <tr><td>12</td><td>Light/Dark + عربي/إنجليزي</td><td class="ok">النصوص في i18n، الثيم بمتغيرات CSS ✓</td></tr>
+      <tr><td>13</td><td>العزل بين المستخدمين</td><td class="ok">المدير لا يرى إشعارات المالك والعكس ✓</td></tr>
+    </table>
+    <p class="small" style="margin-top:10px"><strong>التنظيف بعد الاختبار:</strong> كل الإشعارات التجريبية اتأرشفت — 0 إشعارات متبقية، unread رجع لـ 0، ولا يوجد أي Sales Order أو Return تجريبي في قاعدة البيانات (تم التأكيد: sales_orders=0، returns=0).</p>
+  </div>
+
+  <h2>8. اكتشاف وإصلاح خلل حرج في حدود الطلبات (Rate Limiter)</h2>
+  <div class="box" style="border-color:rgba(239,68,68,.4)">
+    <h3 style="color:var(--danger)">كان النظام هينقفل كاملًا بعد 11 عملية لأي مستخدم</h3>
+    <p>أثناء الاختبار الحي، اكتشفنا أن الـ rate limiter الرئيسي (المفروض يسمح بـ 200 طلب/15 دقيقة) كان بيقفل فعليًا بعد <strong>11 طلب فقط</strong>. السبب: الـ apiLimiter كان مكررًا <strong>17 مرة</strong> في إعداد الـ routes (مرة لكل مسار)، وكل طلب واحد كان بيمر عبر الـ 17 instance كل واحد بيحسبه — يعني كل طلب بيلتهم 17 من الـ quota.</p>
+    <p>كمان كان في خللين إضافيين: الـ importLimiter (10/ساعة) والـ scanLimiter (10/دقيقة) كانوا بيتطبقوا على <strong>كل مسارات /api/inventory</strong> مش على الاستيراد والمسح الضوئي فقط — يعني 10 استيرادات من أي مستخدم كانت بتقفل النظام كله لمدة ساعة.</p>
+    <h3>الإصلاح (منطق بيزنس)</h3>
+    <p>مخاطر حقيقية: تخيل مدير بيفتح 11 صفحة بسرعة (تصفح إشعارات + منتجات + تقارير) — النظام كله بيقفل قدامه 15 دقيقة. أو حد بيستورد ملف 10 مرات في اليوم — النظام مقفول لباقي اليوم لكل الناس. الإصلاح: الـ rate limiter العام اتثبّت <strong>مرة واحدة</strong> على كل المسارات، والـ limiters المتخصصة (استيراد/مسح) بقت مقتصرة على مساراتها الفعلية.</p>
+    <table>
+      <tr><th>القبل</th><th>البعد</th></tr>
+      <tr><td>كل طلب بيتحسب 17 مرة → قفل بعد 11 طلب</td><td class="ok">كل طلب بيتحسب مرة واحدة → 200 طلب حقيقي ✓</td></tr>
+      <tr><td>10 استيرادات تقفل النظام ساعة</td><td class="ok">الاستيراد محدود على مسار الاستيراد فقط ✓</td></tr>
+      <tr><td>10 مسوحات ضوئية تقفل النظام دقيقة</td><td class="ok">المسح محدود على مسار المسح فقط ✓</td></tr>
+    </table>
+    <p class="small" style="margin-top:10px">تم التحقق عمليًا: decrement 1 لكل طلب بدل 17، و25 طلب متتالي نجحت كلها. الملفات المتأثرة: src/index.ts، src/routes/csv.ts، src/routes/scan.ts.</p>
+  </div>
+
+  <div class="box next">
+    <h3 style="color:var(--brand)">الخطوة الجاية</h3>
+    <p>التأكيد البصري النهائي في المتصفح للنقاط المرئية (الجرس، الثيم، اللغة) — وكل النقاط اللي تتحقق آليًا تمت بنجاح. بعد الاعتماد، ننتقل لـ P4.6 (اختبارات E2E).</p>
+  </div>
+
+  <p class="small" style="margin-top:32px; text-align:center; color:var(--muted)">AD Station — Inventory System · P4.5 Executive Report · 2026-08-10</p>
+</div>
+</body>
+</html>

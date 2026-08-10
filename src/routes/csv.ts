@@ -3,6 +3,7 @@ import multer from "multer";
 import * as XLSX from "xlsx";
 import { prisma } from "../config/database";
 import { requireAuth, requirePermission } from "../middleware/auth";
+import { importLimiter } from "../middleware/rateLimiter";
 
 const router = Router();
 
@@ -127,6 +128,7 @@ function parseRows(rows: Record<string, any>[]) {
 // GET /products/import/template
 router.get(
   "/products/import/template",
+  importLimiter,
   requireAuth,
   requirePermission("products.import"),
   async (_req, res) => {
@@ -200,6 +202,7 @@ router.get(
 // POST /products/import
 router.post(
   "/products/import",
+  importLimiter,
   requireAuth,
   requirePermission("products.import"),
   upload.single("file"),

@@ -213,6 +213,34 @@ describe('Sales Orders Service — Full Workflow (Positive)', () => {
     const deliveries = await testPrisma.salesDelivery.findMany({ where: { salesOrderId: order.id } });
     expect(deliveries).toHaveLength(2);
   });
+
+  test('Deliver below minStock → low_stock notification (product-linked metadata)', async () => {
+    const { order, productId } = await makeOrder();
+    await confirmOrder(testPrisma, order.id, user);
+    await transitionToProcessing(testPrisma, order.id, user);
+    await transitionToShipped(testPrisma, order.id, user);
+
+    // ارفع الحد الأدنى ليتفعل low_stock بعد التوصيل (stock 100 → 90)
+    await testPrisma.product.update({ where: { id: productId }, data: { minStock: 95 } });
+
+    const delivered = await deliverOrder(
+      testPrisma,
+      order.id,
+      { deliveredItems: order.items.map((i: any) => ({ itemId: i.id, deliveredQty: i.orderedQty })) },
+      user
+    );
+    expect(delivered.status).toBe('delivered');
+
+    const lowStock = await testPrisma.notification.findFirst({ where: { type: 'low_stock' } });
+    expect(lowStock).toBeTruthy();
+    expect(lowStock!.entityType).toBe('product');
+    expect(lowStock!.entityId).toBe(productId);
+    expect(lowStock!.referenceType).toBe('product');
+    expect(lowStock!.referenceId).toBe(productId);
+    expect(lowStock!.priority).toBe('urgent');
+    expect(lowStock!.icon).toBe('inventory');
+    expect(lowStock!.actionUrl).toBe(`/products?focus=${productId}`);
+  });
 });
 
 describe('Sales Orders Service — Approval Gate (Owner approve/reject)', () => {
@@ -834,5 +862,51 @@ describe('Sales Orders Service — Phase 3 Approval Hardening', () => {
     const fetched = (await getOrder(testPrisma, order.id)) as any;
     expect(fetched!.approvalStatus).toBe('approved');
     expect(fetched!.rejectionNote).toBeNull();
+  });
+});
+
+describe('Sales Orders Service — Transaction Rollback (P4.4)', () => {
+  beforeEach(async () => {
+    await cleanDb();
+    await testPrisma.systemSettings.upsert({
+      where: { key: 'approvalThresholdValue' },
+      update: { value: '5000' },
+      create: { key: 'approvalThresholdValue', value: '5000' },
+    });
+  });
+
+  afterAll(async () => {
+    await cleanDb();
+  });
+
+  test('A failing deliver inside one transaction leaves no order_delivered notification and no stock change', async () => {
+    const { order, productId } = await makeOrder();
+    await confirmOrder(testPrisma, order.id, user);
+    await transitionToProcessing(testPrisma, order.id, user);
+    await transitionToShipped(testPrisma, order.id, user);
+
+    const before = await testPrisma.product.findUnique({ where: { id: productId } });
+    expect(before!.stock).toBe(100);
+
+    // deliveredItems بها item غير موجود في الطلب → fail داخل الـ transaction بعد الـ notification
+    const bogusItemId = 'item-does-not-exist';
+    await expect(
+      deliverOrder(testPrisma, order.id, {
+        deliveredItems: [
+          { itemId: order.items[0].id, deliveredQty: 10 },
+          { itemId: bogusItemId, deliveredQty: 5 },
+        ],
+      }, user)
+    ).rejects.toThrow(/not found/i);
+
+    // لا إشعار ولا تغيير في المخزون
+    const deliveredNotif = await testPrisma.notification.findFirst({ where: { type: 'order_delivered' } });
+    expect(deliveredNotif).toBeNull();
+
+    const after = await testPrisma.product.findUnique({ where: { id: productId } });
+    expect(after!.stock).toBe(100);
+
+    const deliveries = await testPrisma.salesDelivery.findMany({ where: { salesOrderId: order.id } });
+    expect(deliveries).toHaveLength(0);
   });
 });

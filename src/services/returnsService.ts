@@ -1,4 +1,5 @@
 import { Prisma, PrismaClient } from "@prisma/client";
+import { createNotification, createNotifications } from "./notificationService";
 
 type Tx = Prisma.TransactionClient;
 
@@ -439,37 +440,30 @@ export async function createReturn(client: PrismaClient, input: CreateReturnInpu
     });
 
     const owners = await getActiveOwners(tx);
-    for (const owner of owners) {
-      await tx.notification.create({
-        data: {
-          userId: owner.id,
-          type: "return_approval_needed",
-          title: "مرتجع يحتاج اعتماد",
-          message: `المرتجع ${returnNumber} من ${capacity.partyName || ""} يحتاج اعتماد (${subtotal} EGP)`,
-          entityType: "return_order",
-          entityId: created.id,
-          referenceType: "returns",
-          referenceId: created.id,
-          priority: "high",
-          icon: "ShieldAlert",
-          createdBySystem: true,
-        },
-      });
-    }
-    await tx.notification.create({
-      data: {
-        userId: user.userId,
-        type: "return_created",
-        title: "تم إنشاء المرتجع",
-        message: `تم إنشاء المرتجع ${returnNumber} ورفعه للاعتماد`,
+    await createNotifications(
+      tx,
+      owners.map((o) => o.id),
+      {
+        type: "return_approval_needed",
+        title: "مرتجع يحتاج اعتماد",
+        message: `المرتجع ${returnNumber} من ${capacity.partyName || ""} يحتاج اعتماد (${subtotal} EGP)`,
         entityType: "return_order",
         entityId: created.id,
         referenceType: "returns",
         referenceId: created.id,
-        priority: "normal",
-        icon: "PackagePlus",
-        createdBySystem: true,
-      },
+        priority: "high",
+      }
+    );
+    await createNotification(tx, {
+      userId: user.userId,
+      type: "return_created",
+      title: "تم إنشاء المرتجع",
+      message: `تم إنشاء المرتجع ${returnNumber} ورفعه للاعتماد`,
+      entityType: "return_order",
+      entityId: created.id,
+      referenceType: "returns",
+      referenceId: created.id,
+      priority: "normal",
     });
 
     return requireReturnFull(tx, created.id);
@@ -600,20 +594,16 @@ async function transitionReturn(
     });
 
     for (const n of extra.notifications || []) {
-      await tx.notification.create({
-        data: {
-          userId: n.userId,
-          type: n.type,
-          title: n.title,
-          message: n.message,
-          entityType: "return_order",
-          entityId: id,
-          referenceType: "returns",
-          referenceId: id,
-          priority: n.priority || "normal",
-          icon: n.icon || "Bell",
-          createdBySystem: true,
-        },
+      await createNotification(tx, {
+        userId: n.userId,
+        type: n.type,
+        title: n.title,
+        message: n.message,
+        entityType: "return_order",
+        entityId: id,
+        referenceType: "returns",
+        referenceId: id,
+        priority: n.priority || "normal",
       });
     }
 
@@ -634,7 +624,6 @@ export async function approveReturn(client: PrismaClient, id: string, user: Serv
         type: "return_approved",
         title: "تم اعتماد المرتجع",
         message: `تم اعتماد المرتجع ${ret.returnNumber}`,
-        icon: "BadgeCheck",
       },
     ],
   });
@@ -655,7 +644,6 @@ export async function rejectReturn(client: PrismaClient, id: string, user: Servi
         title: "تم رفض المرتجع",
         message: `تم رفض المرتجع ${ret.returnNumber} — ${reason.trim()}`,
         priority: "urgent",
-        icon: "XCircle",
       },
     ],
   });
@@ -799,23 +787,20 @@ export async function receiveReturn(client: PrismaClient, id: string, input: Rec
 
     const recipients = new Set<string>([fresh.createdBy || user.userId]);
     if (fresh.approvedBy) recipients.add(fresh.approvedBy);
-    for (const recipientId of recipients) {
-      await tx.notification.create({
-        data: {
-          userId: recipientId,
-          type: "return_received",
-          title: "تم استلام المرتجع",
-          message: `تم استلام المرتجع ${fresh.returnNumber} وتحديث المخزون`,
-          entityType: "return_order",
-          entityId: fresh.id,
-          referenceType: "returns",
-          referenceId: fresh.id,
-          priority: "normal",
-          icon: "PackageCheck",
-          createdBySystem: true,
-        },
-      });
-    }
+    await createNotifications(
+      tx,
+      [...recipients],
+      {
+        type: "return_received",
+        title: "تم استلام المرتجع",
+        message: `تم استلام المرتجع ${fresh.returnNumber} وتحديث المخزون`,
+        entityType: "return_order",
+        entityId: fresh.id,
+        referenceType: "returns",
+        referenceId: fresh.id,
+        priority: "normal",
+      }
+    );
 
     return requireReturnFull(tx, updated.id);
   });
@@ -867,20 +852,16 @@ export async function refundReturn(client: PrismaClient, id: string, input: Refu
       },
     });
 
-    await tx.notification.create({
-      data: {
-        userId: ret.createdBy || user.userId,
-        type: isComplete ? "return_refund_completed" : "return_refund_pending",
-        title: isComplete ? "تم استكمال الـ Refund" : "تم تسجيل Refund معلّق",
-        message: `${isComplete ? "تم استكمال" : "تم تسجيل"} الـ Refund للمرتجع ${ret.returnNumber} — ${amount} ${ret.currency || "EGP"}`,
-        entityType: "return_order",
-        entityId: ret.id,
-        referenceType: "returns",
-        referenceId: ret.id,
-        priority: "normal",
-        icon: "Banknote",
-        createdBySystem: true,
-      },
+    await createNotification(tx, {
+      userId: ret.createdBy || user.userId,
+      type: isComplete ? "return_refund_completed" : "return_refund_pending",
+      title: isComplete ? "تم استكمال الـ Refund" : "تم تسجيل Refund معلّق",
+      message: `${isComplete ? "تم استكمال" : "تم تسجيل"} الـ Refund للمرتجع ${ret.returnNumber} — ${amount} ${ret.currency || "EGP"}`,
+      entityType: "return_order",
+      entityId: ret.id,
+      referenceType: "returns",
+      referenceId: ret.id,
+      priority: "normal",
     });
 
     return requireReturnFull(tx, updated.id);
@@ -929,20 +910,16 @@ export async function closeReturn(client: PrismaClient, id: string, input: Close
       },
     });
 
-    await tx.notification.create({
-      data: {
-        userId: ret.createdBy || user.userId,
-        type: "return_closed",
-        title: "تم إقفال المرتجع",
-        message: `تم إقفال المرتجع ${ret.returnNumber} (القرار: ${input.resolution})`,
-        entityType: "return_order",
-        entityId: ret.id,
-        referenceType: "returns",
-        referenceId: ret.id,
-        priority: "normal",
-        icon: "Lock",
-        createdBySystem: true,
-      },
+    await createNotification(tx, {
+      userId: ret.createdBy || user.userId,
+      type: "return_closed",
+      title: "تم إقفال المرتجع",
+      message: `تم إقفال المرتجع ${ret.returnNumber} (القرار: ${input.resolution})`,
+      entityType: "return_order",
+      entityId: ret.id,
+      referenceType: "returns",
+      referenceId: ret.id,
+      priority: "normal",
     });
 
     return requireReturnFull(tx, updated.id);
@@ -982,20 +959,16 @@ export async function archiveReturn(client: PrismaClient, id: string, user: Serv
       },
     });
 
-    await tx.notification.create({
-      data: {
-        userId: user.userId,
-        type: "return_archived",
-        title: "تمت أرشفة المرتجع",
-        message: `تمت أرشفة المرتجع ${ret.returnNumber}`,
-        entityType: "return_order",
-        entityId: ret.id,
-        referenceType: "returns",
-        referenceId: ret.id,
-        priority: "low",
-        icon: "Archive",
-        createdBySystem: true,
-      },
+    await createNotification(tx, {
+      userId: user.userId,
+      type: "return_archived",
+      title: "تمت أرشفة المرتجع",
+      message: `تمت أرشفة المرتجع ${ret.returnNumber}`,
+      entityType: "return_order",
+      entityId: ret.id,
+      referenceType: "returns",
+      referenceId: ret.id,
+      priority: "low",
     });
 
     return getReturnFull(tx, updated.id);
@@ -1260,23 +1233,16 @@ export async function checkRefundDelays(client: PrismaClient): Promise<number> {
     const recipients = new Set<string>([ret.createdBy || ""].filter(Boolean));
     for (const o of owners) recipients.add(o.id);
 
-    for (const recipientId of recipients) {
-      await client.notification.create({
-        data: {
-          userId: recipientId,
-          type: "return_refund_delayed",
-          title: "تأخر الـ Refund",
-          message: `المرتجع ${ret.returnNumber} تأخر Refund (${Number(ret.refundAmount) || 0} EGP — ${ret.refundStatus})`,
-          entityType: "return_order",
-          entityId: ret.id,
-          referenceType: "returns",
-          referenceId: ret.id,
-          priority: "urgent",
-          icon: "AlarmClock",
-          createdBySystem: true,
-        },
-      });
-    }
+    await createNotifications(client as any, [...recipients], {
+      type: "return_refund_delayed",
+      title: "تأخر الـ Refund",
+      message: `المرتجع ${ret.returnNumber} تأخر Refund (${Number(ret.refundAmount) || 0} EGP — ${ret.refundStatus})`,
+      entityType: "return_order",
+      entityId: ret.id,
+      referenceType: "returns",
+      referenceId: ret.id,
+      priority: "urgent",
+    });
     count++;
   }
   return count;

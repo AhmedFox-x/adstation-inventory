@@ -27,7 +27,7 @@ import { initKeyManager } from "./utils/keyManager";
 import { DEFAULT_ROLES } from "./utils/permissions";
 import { prisma } from "./config/database";
 import { seedBarcodes } from "./utils/barcode";
-import { apiLimiter, authLimiter, scanLimiter, importLimiter } from "./middleware/rateLimiter";
+import { apiLimiter, authLimiter } from "./middleware/rateLimiter";
 import { initSentry, captureException } from "./utils/sentry";
 
 // ─── Init Sentry ──────────────────────────────────────────────────────────────
@@ -125,23 +125,24 @@ app.get("/health", async (_req, res) => {
 
 // ─── Routes (with rate limiting) ─────────────────────────────────────────────
 app.use("/api/inventory/auth", authLimiter, authRouter);
-app.use("/api/inventory", apiLimiter, productsRouter);
-app.use("/api/inventory", apiLimiter, permitsRouter);
-app.use("/api/inventory", apiLimiter, logRouter);
-app.use("/api/inventory", scanLimiter, scanRouter);
-app.use("/api/inventory", apiLimiter, stocktakeRouter);
-app.use("/api/inventory", apiLimiter, usersRouter);
-app.use("/api/inventory", apiLimiter, rolesRouter);
-app.use("/api/inventory", apiLimiter, barcodeRouter);
-app.use("/api/inventory", apiLimiter, suppliersRouter);
-app.use("/api/inventory", apiLimiter, purchaseOrdersRouter);
-app.use("/api/inventory", apiLimiter, clientsRouter);
-app.use("/api/inventory", importLimiter, csvRouter);
-app.use("/api/inventory", apiLimiter, reportsRouter);
-app.use("/api/inventory", apiLimiter, reservationsRouter);
-app.use("/api/inventory", apiLimiter, salesOrdersRouter);
-app.use("/api/inventory", apiLimiter, returnsRouter);
-app.use("/api/inventory", apiLimiter, notificationsRouter);
+app.use("/api/inventory", apiLimiter);
+app.use("/api/inventory", productsRouter);
+app.use("/api/inventory", permitsRouter);
+app.use("/api/inventory", logRouter);
+app.use("/api/inventory", scanRouter);
+app.use("/api/inventory", stocktakeRouter);
+app.use("/api/inventory", usersRouter);
+app.use("/api/inventory", rolesRouter);
+app.use("/api/inventory", barcodeRouter);
+app.use("/api/inventory", suppliersRouter);
+app.use("/api/inventory", purchaseOrdersRouter);
+app.use("/api/inventory", clientsRouter);
+app.use("/api/inventory", csvRouter);
+app.use("/api/inventory", reportsRouter);
+app.use("/api/inventory", reservationsRouter);
+app.use("/api/inventory", salesOrdersRouter);
+app.use("/api/inventory", returnsRouter);
+app.use("/api/inventory", notificationsRouter);
 
 // ─── Key Manager Status ──────────────────────────────────────────────────────
 import { getStatus, getKeyCount } from "./utils/keyManager";
