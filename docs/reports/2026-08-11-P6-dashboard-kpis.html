@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>P6 — لوحة تحكم احترافية + مؤشرات الأداء (Dashboard + KPIs)</title>
+<style>
+  :root { --brand:#DC2626; --dark:#0A0C10; --panel:#12151B; --panel2:#1F2430; --text:#EEF0F3; --muted:#8891A3; --line:#242A35; --ok:#22C55E; --warn:#F59E0B; --danger:#EF4444; }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { font-family:'Segoe UI', Tahoma, Arial, sans-serif; background:var(--dark); color:var(--text); line-height:1.7; }
+  .wrap { max-width:860px; margin:0 auto; padding:40px 24px; }
+  .header { border-bottom:3px solid var(--brand); padding-bottom:24px; margin-bottom:32px; }
+  .header .tag { display:inline-block; background:rgba(220,38,38,.12); color:var(--brand); font-size:12px; font-weight:700; padding:4px 12px; border-radius:999px; margin-bottom:14px; letter-spacing:.5px; }
+  h1 { font-size:26px; font-weight:800; color:var(--text); }
+  .header .date { color:var(--muted); font-size:13px; margin-top:6px; }
+  h2 { font-size:18px; font-weight:700; color:var(--brand); margin:32px 0 14px; padding-right:12px; border-right:3px solid var(--brand); }
+  p { color:#C7CDD9; font-size:14px; margin-bottom:10px; }
+  .box { background:var(--panel); border:1px solid var(--line); border-radius:14px; padding:20px; margin-bottom:16px; }
+  .box h3 { font-size:15px; font-weight:700; color:var(--text); margin-bottom:10px; }
+  table { width:100%; border-collapse:collapse; background:var(--panel); border-radius:12px; overflow:hidden; font-size:13px; }
+  th, td { padding:11px 14px; text-align:right; border-bottom:1px solid var(--line); }
+  th { background:var(--panel2); color:var(--brand); font-weight:700; font-size:12px; }
+  td { color:#C7CDD9; }
+  tr:last-child td { border-bottom:none; }
+  .ok { color:var(--ok); font-weight:700; }
+  .warn { color:var(--warn); font-weight:700; }
+  .danger { color:var(--danger); font-weight:700; }
+  .badge { display:inline-block; padding:2px 10px; border-radius:999px; font-size:11px; font-weight:700; }
+  .badge.green { background:rgba(34,197,94,.12); color:var(--ok); }
+  .badge.orange { background:rgba(245,158,11,.12); color:var(--warn); }
+  .badge.red { background:rgba(239,68,68,.12); color:var(--danger); }
+  .arrow { color:var(--brand); font-weight:700; }
+  ul { padding-right:22px; margin-bottom:10px; }
+  li { color:#C7CDD9; font-size:14px; margin-bottom:6px; }
+  .next { background:rgba(220,38,38,.06); border:1px dashed rgba(220,38,38,.35); }
+  .small { font-size:12px; color:var(--muted); }
+  code { direction:ltr; display:inline-block; background:var(--panel2); border-radius:6px; padding:1px 7px; font-size:12px; font-family:Consolas,monospace; color:#C7CDD9; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="header">
+    <span class="tag">تقرير تنفيذي — تغيير جذري (P0/P1)</span>
+    <h1>P6 — لوحة تحكم احترافية + مؤشرات الأداء (Dashboard + KPIs)</h1>
+    <div class="date">التاريخ: 2026-08-11 — تم تنفيذه واختباره (كامل الـ Test Suite: 200/200 ناجح)</div>
+  </div>
+
+  <h2>1. الملخص التنفيذي</h2>
+  <p>أول صفحة بتفتح في نظام المخزون (اللوحة الرئيسية) كانت بسيطة جدًا: شوية أرقام ثابتة وآخر حركات بس — <strong>من غير أي فكرة عن "قيمة المخزون بالفلوس" أو "فين الفلوس اللي واقفة في الرفوف"</strong>.</p>
+  <p>دلوقتي اللوحة بقت تقرير إداري كامل لحظة بلحظة: <strong>قيمة المخزون بالجنيه، حركة آخر 30 يوم (توريد مقابل صرف)، توزيع القيمة حسب الفئة، الأصناف الأعلى قيمة والأكثر حركة، وتنبيهات نقص المخزون</strong> — كلها في شاشة واحدة، من غير ما المدير يفتح 3 صفحات ويجمّع الأرقام بنفسه.</p>
+
+  <h2>2. قبل / بعد</h2>
+  <div class="box">
+    <h3>قبل</h3>
+    <ul>
+      <li>اللوحة الرئيسية: 5 كروت (إجمالي القطع، عدد الأصناف، منخفض، نافذ، حركات اليوم) + جدول آخر 10 حركات فقط.</li>
+      <li><strong>مفيش قيمة مخزون بالجنيه في الواجهة</strong> رغم إنها موجودة في الـ API من فترة (reports/value).</li>
+      <li>مفيش رسوم بيانية ولا اتجاهات — صعب تاخد قرار على بيانات قديمة من غير رسمة.</li>
+      <li>البيانات مبعثرة على 3 endpoints مختلفين (stats + reports/value + reports/abc) — كل واحد بياخده لوحده.</li>
+    </ul>
+  </div>
+  <div class="box">
+    <h3>بعد</h3>
+    <ul>
+      <li><strong>endpoint واحد جديد <code>GET /dashboard</code></strong> بيجمّع كل حاجة: الـ KPIs + سلسلة 30 يوم + توزيع الفئات + الأكثر حركة + الأعلى قيمة + تنبيهات منخفضة + ملخص ABC + آخر الحركات — نداء واحد للواجهة.</li>
+      <li>كروت محسّنة: <strong>قيمة المخزون (ج.م) كرقم رئيسي</strong> مع سباركلين لكل كارت + شريط "قيمة توريد/صرف/صافي اليوم".</li>
+      <li><strong>رسوم بيانية SVG مبنية يدويًا + framer-motion</strong> (صفر مكتبات جديدة): أعمدة آخر 30 يوم (توريد أخضر / صرف أحمر) + دونات توزيع القيمة حسب الفئة + قوائم أفقية مرتبة للأعلى حركة والأعلى قيمة.</li>
+      <li>لوحة تنبيهات المخزون المنخفض + جودة البيانات (أصناف بدون سعر) + ملخص ABC (A/B/C).</li>
+      <li>كل الأرقام <strong>تستبعد المنتجات المؤرشفة</strong> (متوافقة مع قاعدة P5) — اللوحة بتحسب على المخزون التشغيلي الفعلي بس.</li>
+    </ul>
+  </div>
+
+  <h2>3. الأثر على الشغل اليومي</h2>
+  <div class="box">
+    <p><strong>الفريق (Manager/Operator):</strong> اللوحة أسرع وأوضح — أول نظرة بتقولك المخزون واقف بكام، وفيه أيه بيتحرك، وأيه ناقص ويحتاج تشتريه قبل ما ينتهي.</p>
+    <p><strong>المدير (Owner/Admin):</strong> في اجتماع أو وقت اتخاذ قرار شراء: يفتح اللوحة ويشوف بصريًا إيه المنتج صاحب أعلى قيمة (فلوسك واقفة فيه) وإيه الأكثر حركة (اللي بيتباع/بيتصرف بسرعة) — قرار "نشترى إيه النهارده" بقى مبني على رسمة مش تخمين.</p>
+    <p><strong>أداء:</strong> الـ endpoint واحد بجمع البيانات في استعلامات متوازية (Promise.all) — سريع حتى مع 989 منتج. ودي نسخة من غير أي تغيير في الـ Schema (مفيش Migration).</p>
+  </div>
+
+  <h2>4. حالة الاختبار</h2>
+  <table>
+    <tr><th>العنصر</th><th>النتيجة</th></tr>
+    <tr><td>كامل الـ Test Suite (19 ملف اختبار — schema + routes + services)</td><td class="ok">200/200 ناجح ✓</td></tr>
+    <tr><td>اختبارات P6 الجديدة (tests/dashboard/dashboard.test.ts)</td><td class="ok">6/6 ناجح ✓</td></tr>
+    <tr><td>أمان: 401 بدون توكن + 403 بدون صلاحية <code>reports.view</code></td><td class="ok">ناجح ✓</td></tr>
+    <tr><td>إيجابي: استجابة كاملة بالأقسام الثمانية لقارئ مأذون</td><td class="ok">ناجح ✓</td></tr>
+    <tr><td>سلبي: المنتجات المؤرشفة مستبعدة من كل الـ KPIs والفئات والأكثر حركة</td><td class="ok">ناجح ✓</td></tr>
+    <tr><td>دقة الأرقام: low stock / out of stock / بدون سعر تُحسب صح</td><td class="ok">ناجح ✓</td></tr>
+    <tr><td>السلسلة الزمنية: 30 يوم مضبوطة (صفر-ملأ) مع جمع توريد/صرف/حركات</td><td class="ok">ناجح ✓</td></tr>
+    <tr><td>التحقق الحي (قراءة فقط على بيانات الإنتاج): القيم تطابق الواقع (7950 ج.م، 989 صنف، 143 قطعة)</td><td class="ok">ناجح ✓</td></tr>
+    <tr><td>بناء TypeScript في الـ Backend و الـ Frontend + vite build</td><td class="ok">ناجح ✓</td></tr>
+  </table>
+
+  <h2>5. الملفات اللي اتعدلت</h2>
+  <table>
+    <tr><th>الملف</th><th>التغيير</th></tr>
+    <tr><td>inventory-railway/src/routes/dashboard.ts <span class="badge green">جديد</span></td><td>endpoint <code>GET /dashboard</code> — تجميع KPIs + سلسلة 30 يوم + فئات + Top Movers/Value + تنبيهات + ABC + آخر الحركات</td></tr>
+    <tr><td>inventory-railway/src/index.ts</td><td>توصيل الـ router الجديد</td></tr>
+    <tr><td>inventory-railway/tests/dashboard/dashboard.test.ts <span class="badge green">جديد</span></td><td>6 اختبارات (أمان + سلبي/إيجابي + دقة الأرقام + السلسلة الزمنية)</td></tr>
+    <tr><td>adstation-frontend/src/services/api.ts</td><td>أنواع <code>DashboardData</code> + دالة <code>warehouseApi.dashboard()</code></td></tr>
+    <tr><td>adstation-frontend/src/components/admin/inventory/charts.tsx <span class="badge green">جديد</span></td><td>مكونات SVG + framer-motion: Sparkline، SeriesBarsChart، CategoryDonut، HBarList، ChartEmpty</td></tr>
+    <tr><td>adstation-frontend/src/pages/admin/inventory/DashboardPage.tsx</td><td>إعادة بناء كاملة للوحة (KPIs + رسوم + تنبيهات + آخر الحركات)</td></tr>
+    <tr><td>adstation-frontend/src/i18n/ar.ts + en.ts</td><td>ترجمات جديدة للوحة بالعربية والإنجليزية</td></tr>
+  </table>
+
+  <h2>6. الخطوة الجاية</h2>
+  <div class="box next">
+    <p><strong>التحرك لـ Point 7:</strong> استكمال بقيّة خطة الـ 10 نقاط بالترتيب، مع الاحتفاظ بالبند التقني المعلّق (تغليف <code>stocktake approve</code> في Transaction واحد) كبند مستقل بعد ما الـ 10 نقاط تخلص.</p>
+  </div>
+
+</div>
+</body>
+</html>

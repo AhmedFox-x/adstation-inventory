@@ -21,6 +21,7 @@ import reservationsRouter from "./routes/reservations";
 import salesOrdersRouter from "./routes/sales-orders";
 import returnsRouter from "./routes/returns";
 import notificationsRouter from "./routes/notifications";
+import dashboardRouter from "./routes/dashboard";
 
 import { errorHandler } from "./middleware/errorHandler";
 import { initKeyManager } from "./utils/keyManager";
@@ -143,6 +144,7 @@ app.use("/api/inventory", reservationsRouter);
 app.use("/api/inventory", salesOrdersRouter);
 app.use("/api/inventory", returnsRouter);
 app.use("/api/inventory", notificationsRouter);
+app.use("/api/inventory", dashboardRouter);
 
 // ─── Key Manager Status ──────────────────────────────────────────────────────
 import { getStatus, getKeyCount } from "./utils/keyManager";
