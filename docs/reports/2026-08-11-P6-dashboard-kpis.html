@@ -98,10 +98,10 @@
     <tr><td>inventory-railway/src/routes/dashboard.ts <span class="badge green">جديد</span></td><td>endpoint <code>GET /dashboard</code> — تجميع KPIs + سلسلة 30 يوم + فئات + Top Movers/Value + تنبيهات + ABC + آخر الحركات</td></tr>
     <tr><td>inventory-railway/src/index.ts</td><td>توصيل الـ router الجديد</td></tr>
     <tr><td>inventory-railway/tests/dashboard/dashboard.test.ts <span class="badge green">جديد</span></td><td>6 اختبارات (أمان + سلبي/إيجابي + دقة الأرقام + السلسلة الزمنية)</td></tr>
-    <tr><td>adstation-frontend/src/services/api.ts</td><td>أنواع <code>DashboardData</code> + دالة <code>warehouseApi.dashboard()</code></td></tr>
-    <tr><td>adstation-frontend/src/components/admin/inventory/charts.tsx <span class="badge green">جديد</span></td><td>مكونات SVG + framer-motion: Sparkline، SeriesBarsChart، CategoryDonut، HBarList، ChartEmpty</td></tr>
-    <tr><td>adstation-frontend/src/pages/admin/inventory/DashboardPage.tsx</td><td>إعادة بناء كاملة للوحة (KPIs + رسوم + تنبيهات + آخر الحركات)</td></tr>
-    <tr><td>adstation-frontend/src/i18n/ar.ts + en.ts</td><td>ترجمات جديدة للوحة بالعربية والإنجليزية</td></tr>
+    <tr><td>inventory-frontend/src/services/api.ts</td><td>أنواع <code>DashboardData</code> + دالة <code>warehouseApi.dashboard()</code></td></tr>
+    <tr><td>inventory-frontend/src/components/charts.tsx <span class="badge green">جديد</span></td><td>مكونات SVG + framer-motion: SeriesBarsChart، CategoryDonut، HBarList، ChartEmpty</td></tr>
+    <tr><td>inventory-frontend/src/pages/DashboardPage.tsx</td><td>ترقية اللوحة (KPIs قيمة + رسوم 30 يوم + فئات + Top Movers/Value + تنبيهات + ABC + آخر الحركات) مع الحفاظ على Quick Actions وأقسام PO/SO/Returns مضغوطة</td></tr>
+    <tr><td>inventory-frontend/src/i18n/ar.ts + en.ts</td><td>ترجمات جديدة للوحة بالعربية والإنجليزية</td></tr>
   </table>
 
   <h2>6. الخطوة الجاية</h2>

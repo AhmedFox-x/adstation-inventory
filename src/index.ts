@@ -167,7 +167,7 @@ app.post("/api/inventory/alerts/check", requireAuth, async (_req, res) => {
 // ─── Static files (Production) ───────────────────────────────────────────────
 const distPath = process.env.NODE_ENV === "production"
   ? path.resolve(__dirname, "../public")
-  : path.resolve(__dirname, "../../inventory-frontend/dist");
+  : process.env.FRONTEND_DIST || path.resolve(__dirname, "../../AdStation System/WorkShop/OpenCode/files/inventory-frontend/dist");
 app.use(express.static(distPath));
 
 // ─── Product images ──────────────────────────────────────────────────────────
