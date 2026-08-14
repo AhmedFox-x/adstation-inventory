@@ -37,7 +37,7 @@ const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
 
 // ─── Validate ────────────────────────────────────────────────────────────────
 function validate() {
-  const missing = [];
+  const missing: string[] = [];
   if (!DATABASE_URL) missing.push("DATABASE_URL");
   if (!AWS_ACCESS_KEY_ID) missing.push("AWS_ACCESS_KEY_ID");
   if (!AWS_SECRET_ACCESS_KEY) missing.push("AWS_SECRET_ACCESS_KEY");
