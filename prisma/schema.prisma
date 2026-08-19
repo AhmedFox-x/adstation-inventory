@@ -71,6 +71,8 @@ model Product {
   reservations     Reservation[]
   deliveryItems    SalesDeliveryItem[]
   returnItems      ReturnOrderItem[]
+  warehouseStocks  WarehouseStock[]
+  transferItems    TransferItem[]
 }
 
 model Reservation {
@@ -78,7 +80,7 @@ model Reservation {
   productId        String
   clientId         String?
   salesOrderItemId String?
-  warehouseId      String?
+  warehouseId      String
   quantity         Int
   fulfilledQty     Int      @default(0)
   status           String   @default("active")
@@ -91,11 +93,13 @@ model Reservation {
   product         Product         @relation(fields: [productId], references: [id])
   client          Client?         @relation(fields: [clientId], references: [id])
   salesOrderItem  SalesOrderItem? @relation(fields: [salesOrderItemId], references: [id])
+  warehouse       Warehouse       @relation(fields: [warehouseId], references: [id])
 
   @@index([productId])
   @@index([clientId])
   @@index([status])
   @@index([salesOrderItemId])
+  @@index([warehouseId])
 }
 
 model WithdrawalPermit {
@@ -161,6 +165,7 @@ model InventoryLog {
   id            String   @id @default(cuid())
   type          String
   productId     String
+  warehouseId   String?
   oldStock      Int
   newStock      Int
   change        Int
@@ -179,17 +184,20 @@ model InventoryLog {
   createdAt     DateTime @default(now())
 
   product Product @relation(fields: [productId], references: [id])
+  warehouse Warehouse? @relation(fields: [warehouseId], references: [id])
 
   @@index([userId])
   @@index([entityType, entityId])
   @@index([type])
   @@index([createdAt])
+  @@index([warehouseId])
 }
 
 model StocktakeSession {
   id          String   @id @default(cuid())
   name        String
   status      String   @default("in_progress")
+  warehouseId String?
   userId      String
   userName    String?
   date        DateTime @default(now())
@@ -197,7 +205,8 @@ model StocktakeSession {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  items StocktakeItem[]
+  items     StocktakeItem[]
+  warehouse Warehouse?    @relation(fields: [warehouseId], references: [id])
 }
 
 model StocktakeItem {
@@ -568,4 +577,103 @@ model ReturnOrderStatusHistory {
 
   @@index([returnId, createdAt])
   @@index([returnId])
+}
+
+model Warehouse {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  type        String   @default("MAIN")
+  description String?
+  isActive    Boolean  @default(true)
+  deletedAt   DateTime?
+  deletedBy   String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  stocks            WarehouseStock[]
+  inventoryLogs     InventoryLog[]
+  stocktakeSessions StocktakeSession[]
+  reservations      Reservation[]
+  transfersFrom     Transfer[]       @relation("TransferSource")
+  transfersTo       Transfer[]       @relation("TransferDestination")
+
+  @@index([type])
+}
+
+model WarehouseStock {
+  id               String   @id @default(cuid())
+  warehouseId      String
+  productId        String
+  quantity         Int      @default(0)
+  reservedQuantity Int      @default(0)
+  updatedAt        DateTime @updatedAt
+
+  warehouse Warehouse @relation(fields: [warehouseId], references: [id])
+  product   Product   @relation(fields: [productId], references: [id])
+
+  @@unique([warehouseId, productId])
+  @@index([productId])
+}
+
+model Transfer {
+  id              String    @id @default(cuid())
+  transferNumber  String    @unique
+  fromWarehouseId String
+  toWarehouseId   String
+  status          String    @default("pending")
+  notes           String?
+  createdBy       String?
+  createdByName   String?
+  executedBy      String?
+  executedByName  String?
+  executedAt      DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  fromWarehouse Warehouse      @relation("TransferSource", fields: [fromWarehouseId], references: [id])
+  toWarehouse   Warehouse      @relation("TransferDestination", fields: [toWarehouseId], references: [id])
+  items         TransferItem[]
+
+  @@index([status])
+  @@index([fromWarehouseId])
+  @@index([toWarehouseId])
+  @@index([createdAt])
+}
+
+model TransferItem {
+  id         String  @id @default(cuid())
+  transferId String
+  productId  String
+  quantity   Int
+
+  transfer Transfer @relation(fields: [transferId], references: [id], onDelete: Cascade)
+  product  Product  @relation(fields: [productId], references: [id])
+
+  @@index([transferId])
+  @@index([productId])
+}
+
+model PresentationSetting {
+  id              String   @id @default(cuid())
+  entityType      String
+  entityId        String
+
+  showroomVisible Boolean  @default(true)
+  showroomSort    Int      @default(0)
+  showroomFeatured Boolean @default(false)
+
+  catalogIncluded Boolean  @default(true)
+  catalogSort     Int      @default(0)
+  catalogFeatured Boolean  @default(false)
+  catalogHero     Boolean  @default(false)
+
+  coverImage      String?
+  displayName     String?
+  displayDesc     String?
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([entityType, entityId])
+  @@index([entityType])
 }

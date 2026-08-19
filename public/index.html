@@ -1,39 +1,45 @@
-<!DOCTYPE html>
-<html lang="ar" dir="rtl">
+<!doctype html>
+      <html lang="ar" dir="rtl" data-theme="light">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
-    <title>AD Station - Inventory Management</title>
-
-    <!-- PWA Meta Tags -->
-    <meta name="theme-color" content="#0a0a0f" />
-    <meta name="description" content="نظام إدارة المخزون — توريد وصرف المنتجات" />
-
-    <!-- iOS PWA -->
-    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="description" content="نظام إدارة المخزون — AD Station" />
+    <meta name="theme-color" content="#f4f5f7" />
+    <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-    <meta name="apple-mobile-web-app-title" content="AD Inventory" />
-    <link rel="apple-touch-icon" href="/icons/icon-192x192.png" />
-
-    <!-- Favicon -->
-    <link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192x192.png" />
-    <link rel="icon" type="image/png" sizes="512x512" href="/icons/icon-512x512.png" />
     <link rel="icon" type="image/png" href="/adstation-logo-icon.png" />
-
-    <!-- Fonts -->
+    <link rel="apple-touch-icon" href="/adstation-logo-icon.png" />
+    <title>AD Station - Inventory Management</title>
+    <script>
+      ;(function () {
+        try {
+          var t = localStorage.getItem('ad-theme') || 'light'
+          var r = t === 'system'
+            ? (window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark')
+            : t
+          var d = document.documentElement
+          d.dataset.theme = r
+          d.style.colorScheme = r
+        } catch (e) { document.documentElement.dataset.theme = 'light' }
+      })()
+    </script>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;500;600&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet" />
-    <script type="module" crossorigin src="/assets/index-DnSOYLjU.js"></script>
-    <link rel="modulepreload" crossorigin href="/assets/vendor-GkdAb5QF.js">
-    <link rel="modulepreload" crossorigin href="/assets/vendor-motion-eMigdgmX.js">
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
+    <script type="module" crossorigin src="/assets/index-BlAj0sdZ.js"></script>
+    <link rel="modulepreload" crossorigin href="/assets/vendor-DnZwx4DZ.js">
+    <link rel="modulepreload" crossorigin href="/assets/vendor-motion-Cq5G57dH.js">
     <link rel="modulepreload" crossorigin href="/assets/vendor-xlsx-CKN5doRT.js">
-    <link rel="modulepreload" crossorigin href="/assets/vendor-jspdf-bh46szAT.js">
+    <link rel="modulepreload" crossorigin href="/assets/vendor-jspdf-Co437GZx.js">
     <link rel="modulepreload" crossorigin href="/assets/vendor-html2canvas-CBrSDip1.js">
-    <link rel="modulepreload" crossorigin href="/assets/vendor-qrcode-CfHKzbyz.js">
-    <link rel="stylesheet" crossorigin href="/assets/index-gPDMha4H.css">
+    <link rel="modulepreload" crossorigin href="/assets/vendor-qrcode-BhnBhUJa.js">
+    <link rel="stylesheet" crossorigin href="/assets/index-19-5-MA1.css">
   <link rel="manifest" href="/manifest.webmanifest"><script id="vite-plugin-pwa:register-sw" src="/registerSW.js"></script></head>
   <body>
     <div id="root"></div>
+    <noscript>هذا النظام يتطلب تفعيل JavaScript</noscript>
   </body>
 </html>

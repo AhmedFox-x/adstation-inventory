@@ -56,6 +56,14 @@ export const PERMISSIONS = {
   RETURNS_REJECT: 'returns.reject',
   RETURNS_CLOSE: 'returns.close',
   RETURNS_REFUND: 'returns.refund',
+  WAREHOUSES_VIEW: 'warehouses.view',
+  WAREHOUSES_CREATE: 'warehouses.create',
+  WAREHOUSES_EDIT: 'warehouses.edit',
+  TRANSFERS_VIEW: 'transfers.view',
+  TRANSFERS_CREATE: 'transfers.create',
+  TRANSFERS_EXECUTE: 'transfers.execute',
+  PRESENTATION_VIEW: 'presentation.view',
+  PRESENTATION_EDIT: 'presentation.edit',
 } as const;
 
 export type Permission = (typeof PERMISSIONS)[keyof typeof PERMISSIONS];
@@ -117,6 +125,14 @@ export const DEFAULT_ROLES: Record<string, { displayName: string; description: s
       PERMISSIONS.RETURNS_CREATE,
       PERMISSIONS.RETURNS_RECEIVE,
       PERMISSIONS.RETURNS_CLOSE,
+      PERMISSIONS.WAREHOUSES_VIEW,
+      PERMISSIONS.WAREHOUSES_CREATE,
+      PERMISSIONS.WAREHOUSES_EDIT,
+      PERMISSIONS.TRANSFERS_VIEW,
+      PERMISSIONS.TRANSFERS_CREATE,
+      PERMISSIONS.TRANSFERS_EXECUTE,
+      PERMISSIONS.PRESENTATION_VIEW,
+      PERMISSIONS.PRESENTATION_EDIT,
     ],
   },
   viewer: {
@@ -129,6 +145,9 @@ export const DEFAULT_ROLES: Record<string, { displayName: string; description: s
       PERMISSIONS.REPORTS_EXPORT,
       PERMISSIONS.SALES_ORDERS_VIEW,
       PERMISSIONS.RETURNS_VIEW,
+      PERMISSIONS.WAREHOUSES_VIEW,
+      PERMISSIONS.TRANSFERS_VIEW,
+      PERMISSIONS.PRESENTATION_VIEW,
     ],
   },
 };

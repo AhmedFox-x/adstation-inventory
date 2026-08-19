@@ -313,6 +313,23 @@ router.delete("/products/:id", requireAuth, requirePermission("products.delete")
       data: { deletedAt: new Date() },
     });
 
+    // Auto-cleanup: hide product from Showroom and Catalog presentations
+    await prisma.presentationSetting.upsert({
+      where: {
+        entityType_entityId: { entityType: "product", entityId: req.params.id },
+      },
+      create: {
+        entityType: "product",
+        entityId: req.params.id,
+        showroomVisible: false,
+        catalogIncluded: false,
+      },
+      update: {
+        showroomVisible: false,
+        catalogIncluded: false,
+      },
+    });
+
     res.json({ message: "Product archived", archived: true });
   } catch (err) {
     next(err);

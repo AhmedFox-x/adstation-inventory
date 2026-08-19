@@ -22,6 +22,9 @@ import salesOrdersRouter from "./routes/sales-orders";
 import returnsRouter from "./routes/returns";
 import notificationsRouter from "./routes/notifications";
 import dashboardRouter from "./routes/dashboard";
+import warehousesRouter from "./routes/warehouses";
+import transfersRouter from "./routes/transfers";
+import presentationRouter from "./routes/presentation";
 
 import { errorHandler } from "./middleware/errorHandler";
 import { initKeyManager } from "./utils/keyManager";
@@ -125,7 +128,12 @@ app.get("/health", async (_req, res) => {
 });
 
 // ─── Routes (with rate limiting) ─────────────────────────────────────────────
-app.use("/api/inventory/auth", authLimiter, authRouter);
+// Strict limiter applies ONLY to credential endpoints (login/register).
+// /auth/me is JWT-protected and called on every route change; limiting it here
+// locked out legit users mid-session (429 → forced logout).
+app.use("/api/inventory/auth/login", authLimiter);
+app.use("/api/inventory/auth/register", authLimiter);
+app.use("/api/inventory/auth", authRouter);
 app.use("/api/inventory", apiLimiter);
 app.use("/api/inventory", productsRouter);
 app.use("/api/inventory", permitsRouter);
@@ -145,6 +153,9 @@ app.use("/api/inventory", salesOrdersRouter);
 app.use("/api/inventory", returnsRouter);
 app.use("/api/inventory", notificationsRouter);
 app.use("/api/inventory", dashboardRouter);
+app.use("/api/inventory", warehousesRouter);
+app.use("/api/inventory", transfersRouter);
+app.use("/api/inventory", presentationRouter);
 
 // ─── Key Manager Status ──────────────────────────────────────────────────────
 import { getStatus, getKeyCount } from "./utils/keyManager";
