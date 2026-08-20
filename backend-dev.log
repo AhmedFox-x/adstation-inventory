@@ -1,0 +1,27 @@
+
+> adstation-inventory-backend@1.0.0 dev
+> ts-node-dev --respawn --transpile-only src/index.ts
+
+[INFO] 07:25:29 ts-node-dev ver. 2.0.0 (using ts-node ver. 10.9.2, typescript ver. 5.9.3)
+  ⚠️  Sentry DSN not configured — error monitoring disabled
+[KeyManager] Initialized with 1 key(s)
+
+📦  AD Station Inventory API running on http://localhost:4001
+   Environment: development
+
+🔒  HTTPS running on https://localhost:4443
+[INFO] 07:42:10 Restarting: D:\inventory-railway\src\services\returnsService.ts has been modified
+  ⚠️  Sentry DSN not configured — error monitoring disabled
+[KeyManager] Initialized with 1 key(s)
+[ERROR] 07:42:15 Error: listen EADDRINUSE: address already in use :::4001
+[INFO] 07:42:18 Restarting: D:\inventory-railway\src\services\stoc[INFO] 07:42:18 Restarting: D:\inv  ⚠️  Sentry DSN not configured — error monitoring disabled
+  ⚠️  Sentry DSN not configured —
+📦  AD Station Inventory API running on http://localhost:4001
+ [ERROR] 07:42:23 Error: listen EADDRINUSE: address already in use :::4001
+[INFO] 07:42:27 Restarting: D:\inventory-railway\src\services\salesOrderService.ts has been modified
+  ⚠️  Sentry DSN not configured — error monitoring disabled
+[KeyManager] Initialized with 1 key(s)
+[ERROR] 07:42:31 Error: listen EADDRINUSE: address already in use :::4001
+nment: development
+
+🔒  HTTPS running on https://localhost:4443

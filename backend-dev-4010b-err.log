@@ -1,0 +1,31 @@
+[ERROR] 
+Invalid `database_1.prisma.notification.count()` invocation in
+D:\inventory-railway\dist\routes\notifications.js:53:60
+
+  50 // GET /notifications/unread-count — عدد الإشعارات غير المقروءة
+  51 router.get("/notifications/unread-count", auth_1.requireAuth, async (req, res, next) => {
+  52     try {
+→ 53         const count = await database_1.prisma.notification.count(
+Timed out fetching a new connection from the connection pool. More info: http://pris.ly/d/connection-pool (Current connection pool timeout: 10, connection limit: 13)
+[ERROR] 
+Invalid `database_1.prisma.notification.count()` invocation in
+D:\inventory-railway\dist\routes\notifications.js:53:60
+
+  50 // GET /notifications/unread-count — عدد الإشعارات غير المقروءة
+  51 router.get("/notifications/unread-count", auth_1.requireAuth, async (req, res, next) => {
+  52     try {
+→ 53         const count = await database_1.prisma.notification.count(
+Can't reach database server at `roundhouse.proxy.rlwy.net:14891`
+
+Please make sure your database server is running at `roundhouse.proxy.rlwy.net:14891`.
+[ERROR] 
+Invalid `database_1.prisma.notification.count()` invocation in
+D:\inventory-railway\dist\routes\notifications.js:53:60
+
+  50 // GET /notifications/unread-count — عدد الإشعارات غير المقروءة
+  51 router.get("/notifications/unread-count", auth_1.requireAuth, async (req, res, next) => {
+  52     try {
+→ 53         const count = await database_1.prisma.notification.count(
+Can't reach database server at `roundhouse.proxy.rlwy.net:14891`
+
+Please make sure your database server is running at `roundhouse.proxy.rlwy.net:14891`.

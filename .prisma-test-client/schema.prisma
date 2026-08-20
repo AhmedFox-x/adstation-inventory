@@ -1,0 +1,655 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../.prisma-test-client"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model SystemSettings {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  value     String
+  updatedAt DateTime @updatedAt
+}
+
+model RoleConfig {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  displayName String
+  description String?
+  permissions String
+  isSystem    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  users User[]
+}
+
+model User {
+  id         String      @id @default(cuid())
+  email      String      @unique
+  password   String
+  firstName  String
+  lastName   String
+  title      String?
+  department String?
+  position   String?
+  role       String      @default("viewer")
+  roleId     String?
+  roleConfig RoleConfig? @relation(fields: [roleId], references: [id])
+  createdAt  DateTime    @default(now())
+
+  @@index([role])
+}
+
+model Product {
+  id              String    @id @default(cuid())
+  name            String
+  variant         String?
+  unit            String    @default("قطعة")
+  stock           Int       @default(0)
+  reservedStock   Int       @default(0)
+  quarantineStock Int       @default(0)
+  minStock        Int       @default(5)
+  sku             String?   @unique
+  barcode         String?   @unique
+  category        String?
+  brand           String?
+  price           Float?    @default(0)
+  imageUrl        String?
+  deletedAt       DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  withdrawalItems WithdrawalItem[]
+  supplyItems     SupplyItem[]
+  logs            InventoryLog[]
+  purchaseItems   PurchaseOrderItem[]
+  salesItems      SalesOrderItem[]
+  reservations    Reservation[]
+  deliveryItems   SalesDeliveryItem[]
+  returnItems     ReturnOrderItem[]
+  warehouseStocks WarehouseStock[]
+  transferItems   TransferItem[]
+}
+
+model Reservation {
+  id               String    @id @default(cuid())
+  productId        String
+  clientId         String?
+  salesOrderItemId String?
+  warehouseId      String
+  quantity         Int
+  fulfilledQty     Int       @default(0)
+  status           String    @default("active")
+  notes            String?
+  expiresAt        DateTime?
+  createdBy        String
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  product        Product         @relation(fields: [productId], references: [id])
+  client         Client?         @relation(fields: [clientId], references: [id])
+  salesOrderItem SalesOrderItem? @relation(fields: [salesOrderItemId], references: [id])
+  warehouse      Warehouse       @relation(fields: [warehouseId], references: [id])
+
+  @@index([productId])
+  @@index([clientId])
+  @@index([status])
+  @@index([salesOrderItemId])
+  @@index([warehouseId])
+}
+
+model WithdrawalPermit {
+  id               String   @id @default(cuid())
+  permitNumber     String   @unique
+  clientName       String
+  clientId         String?
+  salesName        String?
+  operationType    String?
+  notes            String?
+  status           String   @default("completed")
+  imageBase64      String?
+  imageMimeType    String?
+  orderDate        String?
+  deliveryDate     String?
+  permitNumberOrig String?
+  createdAt        DateTime @default(now())
+
+  items  WithdrawalItem[]
+  client Client?          @relation(fields: [clientId], references: [id])
+}
+
+model WithdrawalItem {
+  id                String           @id @default(cuid())
+  permitId          String
+  productId         String
+  quantityRequested Int
+  quantityActual    Int
+  matchConfidence   Float?
+  product           Product          @relation(fields: [productId], references: [id])
+  permit            WithdrawalPermit @relation(fields: [permitId], references: [id])
+}
+
+model SupplyPermit {
+  id               String   @id @default(cuid())
+  permitNumber     String   @unique
+  supplierName     String?
+  supplierId       String?
+  salesName        String?
+  clientName       String?
+  notes            String?
+  imageBase64      String?
+  imageMimeType    String?
+  orderDate        String?
+  deliveryDate     String?
+  permitNumberOrig String?
+  createdAt        DateTime @default(now())
+
+  items    SupplyItem[]
+  supplier Supplier?    @relation(fields: [supplierId], references: [id])
+}
+
+model SupplyItem {
+  id        String       @id @default(cuid())
+  permitId  String
+  productId String
+  quantity  Int
+  product   Product      @relation(fields: [productId], references: [id])
+  permit    SupplyPermit @relation(fields: [permitId], references: [id])
+}
+
+model InventoryLog {
+  id            String   @id @default(cuid())
+  type          String
+  productId     String
+  warehouseId   String?
+  oldStock      Int
+  newStock      Int
+  change        Int
+  clientName    String?
+  salesName     String?
+  notes         String?
+  referenceType String?
+  referenceId   String?
+  userId        String?
+  userName      String?
+  userRole      String?
+  entityType    String?
+  entityId      String?
+  beforeData    Json?
+  afterData     Json?
+  createdAt     DateTime @default(now())
+
+  product   Product    @relation(fields: [productId], references: [id])
+  warehouse Warehouse? @relation(fields: [warehouseId], references: [id])
+
+  @@index([userId])
+  @@index([entityType, entityId])
+  @@index([type])
+  @@index([createdAt])
+  @@index([warehouseId])
+}
+
+model StocktakeSession {
+  id          String   @id @default(cuid())
+  name        String
+  status      String   @default("in_progress")
+  warehouseId String?
+  userId      String
+  userName    String?
+  date        DateTime @default(now())
+  notes       String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  items     StocktakeItem[]
+  warehouse Warehouse?      @relation(fields: [warehouseId], references: [id])
+}
+
+model StocktakeItem {
+  id              String  @id @default(cuid())
+  sessionId       String
+  productId       String
+  productName     String
+  productSku      String?
+  productVariant  String?
+  category        String?
+  systemStock     Int
+  actualCount     Int?
+  note            String?
+  exclusionReason String?
+  flaggedRecount  Boolean @default(false)
+
+  session StocktakeSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+}
+
+model Supplier {
+  id           String   @id @default(cuid())
+  name         String
+  phone        String?
+  email        String?
+  address      String?
+  paymentTerms String?
+  notes        String?
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  purchaseOrders PurchaseOrder[]
+  supplyPermits  SupplyPermit[]
+}
+
+model Client {
+  id        String   @id @default(cuid())
+  name      String
+  phone     String?
+  email     String?
+  address   String?
+  notes     String?
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  withdrawalPermits WithdrawalPermit[]
+  reservations      Reservation[]
+  salesOrders       SalesOrder[]
+}
+
+model PurchaseOrder {
+  id                   String    @id @default(cuid())
+  orderNumber          String    @unique
+  supplierId           String
+  status               String    @default("draft")
+  orderDate            DateTime  @default(now())
+  expectedDeliveryDate DateTime?
+  actualDeliveryDate   DateTime?
+  totalAmount          Float?    @default(0)
+  subtotal             Float?    @default(0)
+  discount             Float?    @default(0)
+  shipping             Float?    @default(0)
+  taxAmount            Float?    @default(0)
+  grandTotal           Float?    @default(0)
+  currency             String    @default("EGP")
+  notes                String?
+  createdBy            String?
+  approvedBy           String?
+  approvedAt           DateTime?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+
+  supplier      Supplier                     @relation(fields: [supplierId], references: [id])
+  items         PurchaseOrderItem[]
+  statusHistory PurchaseOrderStatusHistory[]
+
+  @@index([status])
+  @@index([supplierId])
+}
+
+model PurchaseOrderItem {
+  id               String @id @default(cuid())
+  orderId          String
+  productId        String
+  quantity         Int
+  unitPrice        Float? @default(0)
+  totalPrice       Float? @default(0)
+  discount         Float? @default(0)
+  tax              Float? @default(0)
+  receivedQuantity Int    @default(0)
+  acceptedQty      Int    @default(0)
+  rejectedQty      Int    @default(0)
+
+  order   PurchaseOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product Product       @relation(fields: [productId], references: [id])
+}
+
+model PurchaseOrderStatusHistory {
+  id         String   @id @default(cuid())
+  orderId    String
+  fromStatus String?
+  toStatus   String
+  changedBy  String?
+  note       String?
+  createdAt  DateTime @default(now())
+
+  order PurchaseOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId])
+}
+
+model SalesOrder {
+  id                   String    @id @default(cuid())
+  orderNumber          String    @unique
+  clientId             String
+  reference            String?
+  status               String    @default("draft")
+  orderDate            DateTime  @default(now())
+  expectedDeliveryDate DateTime?
+  actualDeliveryDate   DateTime?
+  expiresAt            DateTime?
+  subtotal             Float?    @default(0)
+  discount             Float?    @default(0)
+  shipping             Float?    @default(0)
+  taxAmount            Float?    @default(0)
+  grandTotal           Float?    @default(0)
+  currency             String    @default("EGP")
+  notes                String?
+  createdBy            String?
+  version              Int       @default(1)
+  deletedAt            DateTime?
+  deletedBy            String?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+
+  client        Client                    @relation(fields: [clientId], references: [id])
+  items         SalesOrderItem[]
+  statusHistory SalesOrderStatusHistory[]
+  approvals     SalesOrderApproval[]
+  deliveries    SalesDelivery[]
+
+  @@index([orderNumber])
+  @@index([status, createdAt])
+  @@index([clientId, createdAt])
+  @@index([expectedDeliveryDate])
+}
+
+model SalesOrderItem {
+  id           String  @id @default(cuid())
+  orderId      String
+  productId    String
+  orderedQty   Int
+  deliveredQty Int     @default(0)
+  costPrice    Float?  @default(0)
+  sellingPrice Float?  @default(0)
+  totalPrice   Float?  @default(0)
+  discount     Float?  @default(0)
+  tax          Float?  @default(0)
+  taxRate      Float?  @default(0)
+  discountRate Float?  @default(0)
+  currency     String? @default("EGP")
+  exchangeRate Float?  @default(1)
+  productName  String?
+  productSku   String?
+  unit         String?
+  barcode      String?
+  category     String?
+  brand        String?
+
+  order         SalesOrder          @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  product       Product             @relation(fields: [productId], references: [id])
+  reservations  Reservation[]
+  deliveryItems SalesDeliveryItem[]
+
+  @@index([productId])
+  @@index([orderId])
+}
+
+model SalesOrderApproval {
+  id           String    @id @default(cuid())
+  salesOrderId String
+  status       String    @default("pending")
+  requestedBy  String?
+  approvedBy   String?
+  rejectedBy   String?
+  reason       String?
+  createdAt    DateTime  @default(now())
+  approvedAt   DateTime?
+  rejectedAt   DateTime?
+
+  salesOrder SalesOrder @relation(fields: [salesOrderId], references: [id], onDelete: Cascade)
+
+  @@index([salesOrderId, status])
+  @@index([salesOrderId])
+}
+
+model SalesOrderStatusHistory {
+  id            String   @id @default(cuid())
+  orderId       String
+  fromStatus    String?
+  toStatus      String
+  changedBy     String?
+  note          String?
+  ip            String?
+  userAgent     String?
+  beforeState   Json?
+  afterState    Json?
+  changedFields String[]
+  createdAt     DateTime @default(now())
+
+  order SalesOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId, createdAt])
+  @@index([orderId])
+}
+
+model SalesDelivery {
+  id             String   @id @default(cuid())
+  salesOrderId   String
+  deliveryNumber String   @unique
+  deliveredAt    DateTime @default(now())
+  deliveredBy    String?
+  driverName     String?
+  vehicle        String?
+  proofImage     String?
+  signature      String?
+  gpsLocation    String?
+  notes          String?
+  createdAt      DateTime @default(now())
+
+  salesOrder SalesOrder          @relation(fields: [salesOrderId], references: [id])
+  items      SalesDeliveryItem[]
+
+  @@index([salesOrderId])
+  @@index([deliveredAt])
+}
+
+model SalesDeliveryItem {
+  id               String  @id @default(cuid())
+  deliveryId       String
+  salesOrderItemId String
+  productId        String
+  quantity         Int
+  unit             String?
+
+  delivery       SalesDelivery  @relation(fields: [deliveryId], references: [id], onDelete: Cascade)
+  salesOrderItem SalesOrderItem @relation(fields: [salesOrderItemId], references: [id])
+  product        Product        @relation(fields: [productId], references: [id])
+
+  @@index([deliveryId])
+}
+
+model Notification {
+  id              String    @id @default(cuid())
+  userId          String?
+  type            String
+  title           String
+  message         String
+  entityType      String?
+  entityId        String?
+  referenceType   String?
+  referenceId     String?
+  priority        String    @default("normal")
+  icon            String?
+  actionUrl       String?
+  createdBySystem Boolean   @default(false)
+  isRead          Boolean   @default(false)
+  readAt          DateTime?
+  deletedAt       DateTime?
+  createdAt       DateTime  @default(now())
+
+  @@index([userId, isRead, createdAt])
+}
+
+model ReturnOrder {
+  id                   String  @id @default(cuid())
+  returnNumber         String  @unique
+  type                 String
+  sourceType           String
+  sourceId             String
+  sourceNumber         String?
+  partyId              String?
+  partyName            String?
+  status               String  @default("draft")
+  warehouseDestination String  @default("returns")
+  subtotal             Float?  @default(0)
+  refundAmount         Float?  @default(0)
+  currency             String  @default("EGP")
+  notes                String?
+  images               Json?
+
+  createdBy       String?
+  approvedBy      String?
+  approvedAt      DateTime?
+  rejectedBy      String?
+  rejectedAt      DateTime?
+  rejectionReason String?
+  receivedBy      String?
+  receivedAt      DateTime?
+  closedBy        String?
+  closedAt        DateTime?
+
+  refundStatus       String    @default("none")
+  refundDate         DateTime?
+  refundNote         String?
+  refundDueAt        DateTime?
+  resolution         String?
+  replacementOrderId String?
+
+  version   Int       @default(1)
+  deletedAt DateTime?
+  deletedBy String?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  items         ReturnOrderItem[]
+  statusHistory ReturnOrderStatusHistory[]
+
+  @@index([status, createdAt])
+  @@index([type])
+  @@index([sourceType, sourceId])
+  @@index([partyId])
+  @@index([createdBy])
+}
+
+model ReturnOrderItem {
+  id           String  @id @default(cuid())
+  returnId     String
+  sourceItemId String?
+  productId    String
+  productName  String?
+  productSku   String?
+  unit         String?
+  condition    String
+  reason       String
+  returnedQty  Int
+  receivedQty  Int     @default(0)
+  unitPrice    Float?  @default(0)
+  totalPrice   Float?  @default(0)
+  imageBefore  String?
+  imageAfter   String?
+  notes        String?
+
+  returnOrder ReturnOrder @relation(fields: [returnId], references: [id], onDelete: Cascade)
+  product     Product     @relation(fields: [productId], references: [id])
+
+  @@index([returnId])
+  @@index([productId])
+  @@index([sourceItemId])
+}
+
+model ReturnOrderStatusHistory {
+  id            String   @id @default(cuid())
+  returnId      String
+  fromStatus    String?
+  toStatus      String
+  changedBy     String?
+  note          String?
+  ip            String?
+  userAgent     String?
+  beforeState   Json?
+  afterState    Json?
+  changedFields String[]
+  createdAt     DateTime @default(now())
+
+  returnOrder ReturnOrder @relation(fields: [returnId], references: [id], onDelete: Cascade)
+
+  @@index([returnId, createdAt])
+  @@index([returnId])
+}
+
+model Warehouse {
+  id          String    @id @default(cuid())
+  name        String    @unique
+  type        String    @default("MAIN")
+  description String?
+  isActive    Boolean   @default(true)
+  deletedAt   DateTime?
+  deletedBy   String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  stocks            WarehouseStock[]
+  inventoryLogs     InventoryLog[]
+  stocktakeSessions StocktakeSession[]
+  reservations      Reservation[]
+  transfersFrom     Transfer[]         @relation("TransferSource")
+  transfersTo       Transfer[]         @relation("TransferDestination")
+
+  @@index([type])
+}
+
+model WarehouseStock {
+  id               String   @id @default(cuid())
+  warehouseId      String
+  productId        String
+  quantity         Int      @default(0)
+  reservedQuantity Int      @default(0)
+  updatedAt        DateTime @updatedAt
+
+  warehouse Warehouse @relation(fields: [warehouseId], references: [id])
+  product   Product   @relation(fields: [productId], references: [id])
+
+  @@unique([warehouseId, productId])
+  @@index([productId])
+}
+
+model Transfer {
+  id              String    @id @default(cuid())
+  transferNumber  String    @unique
+  fromWarehouseId String
+  toWarehouseId   String
+  status          String    @default("pending")
+  notes           String?
+  createdBy       String?
+  createdByName   String?
+  executedBy      String?
+  executedByName  String?
+  executedAt      DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  fromWarehouse Warehouse      @relation("TransferSource", fields: [fromWarehouseId], references: [id])
+  toWarehouse   Warehouse      @relation("TransferDestination", fields: [toWarehouseId], references: [id])
+  items         TransferItem[]
+
+  @@index([status])
+  @@index([fromWarehouseId])
+  @@index([toWarehouseId])
+  @@index([createdAt])
+}
+
+model TransferItem {
+  id         String @id @default(cuid())
+  transferId String
+  productId  String
+  quantity   Int
+
+  transfer Transfer @relation(fields: [transferId], references: [id], onDelete: Cascade)
+  product  Product  @relation(fields: [productId], references: [id])
+
+  @@index([transferId])
+  @@index([productId])
+}

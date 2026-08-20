@@ -1,0 +1,7 @@
+  ⚠️  Sentry DSN not configured — error monitoring disabled
+[KeyManager] Initialized with 1 key(s)
+
+📦  AD Station Inventory API running on http://localhost:4010
+   Environment: development
+
+🔒  HTTPS running on https://localhost:4011

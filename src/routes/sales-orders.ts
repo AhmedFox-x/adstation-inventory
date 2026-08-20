@@ -135,7 +135,8 @@ router.post("/sales-orders/:id/approve", requireAuth, requirePermission(PERMISSI
 // POST /sales-orders/:id/reject
 router.post("/sales-orders/:id/reject", requireAuth, requirePermission(PERMISSIONS.SALES_ORDERS_REJECT), async (req: AuthRequest, res, next) => {
   try {
-    const order = await rejectOrder(prisma, req.params.id, metaOf(req), req.body?.reason);
+    const m = metaOf(req);
+    const order = await rejectOrder(prisma, req.params.id, m as any, { ip: m.ip, userAgent: m.userAgent }, req.body?.reason);
     res.json(order);
   } catch (err) {
     next(err);
@@ -155,7 +156,8 @@ router.post("/sales-orders/:id/close", requireAuth, requirePermission(PERMISSION
 // POST /sales-orders/:id/cancel
 router.post("/sales-orders/:id/cancel", requireAuth, requirePermission(PERMISSIONS.SALES_ORDERS_CANCEL), async (req: AuthRequest, res, next) => {
   try {
-    const order = await cancelOrder(prisma, req.params.id, metaOf(req), req.body?.note);
+    const m = metaOf(req);
+    const order = await cancelOrder(prisma, req.params.id, m as any, { ip: m.ip, userAgent: m.userAgent }, req.body?.note);
     res.json(order);
   } catch (err) {
     next(err);

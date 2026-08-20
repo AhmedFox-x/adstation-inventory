@@ -1,0 +1,12 @@
+Error: listen EADDRINUSE: address already in use :::4001
+    at Server.setupListenHandle [as _listen2] (node:net:2009:16)
+    at listenInCluster (node:net:2066:12)
+    at Server.listen (node:net:2171:7)
+    at app.listen (D:\inventory-railway\node_modules\express\lib\application.js:635:24)
+    at D:\inventory-railway\src\index.ts:209:9
+Error: listen EADDRINUSE: address already in use :::4001
+    at Server.setupListenHandle [as _listen2] (node:net:2009:16)
+    at listenInCluster (node:net:2066:12)
+    at Server.listen (node:net:2171:7)
+    at app.listen (D:\inventory-railway\node_modules\express\lib\application.js:635:24)
+    at D:\inventory-railway\src\index.ts:209:9

@@ -286,7 +286,7 @@ router.post("/purchase-orders/:id/cancel", requireAuth, requirePermission("purch
       where: { id: req.params.id },
       data: {
         status: "cancelled",
-        statusHistory: { create: { fromStatus: existing.status, toStatus: "cancelled", changedBy: req.user?.email || "system", note: "تم إلغاء الطلب" } },
+        statusHistory: { create: { fromStatus: existing.status, toStatus: "cancelled", changedBy: req.user?.email || "system", note: req.body?.note || "تم إلغاء الطلب" } },
       },
       include: { supplier: { select: { id: true, name: true } }, items: { include: { product: { select: { id: true, name: true, barcode: true } } } }, statusHistory: { orderBy: { createdAt: "asc" } } },
     });
