@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { prisma } from "../config/database";
 import { requireAuth, requirePermission, AuthRequest } from "../middleware/auth";
+import { isEmail, isPhone, maxLength } from "../lib/validation";
 
 const router = Router();
 
@@ -75,7 +76,39 @@ router.post("/clients", requireAuth, requirePermission("clients.create"), async 
     const { name, phone, email, address, notes } = req.body;
 
     if (!name || !name.trim()) {
-      res.status(400).json({ error: "Client name is required" });
+      res.status(400).json({ error: "Client name is required", errorAr: "اسم العميل مطلوب" });
+      return;
+    }
+
+    // Validate email format if provided
+    if (email) {
+      const emailResult = isEmail(email, "Email");
+      if (!emailResult.valid) {
+        res.status(400).json({ error: emailResult.error, errorAr: emailResult.errorAr });
+        return;
+      }
+    }
+
+    // Validate phone format if provided
+    if (phone) {
+      const phoneResult = isPhone(phone, "Phone");
+      if (!phoneResult.valid) {
+        res.status(400).json({ error: phoneResult.error, errorAr: phoneResult.errorAr });
+        return;
+      }
+    }
+
+    // Validate name length
+    const nameResult = maxLength(name, "Name", 200);
+    if (!nameResult.valid) {
+      res.status(400).json({ error: nameResult.error, errorAr: nameResult.errorAr });
+      return;
+    }
+
+    // Check for duplicate client name
+    const existing = await prisma.client.findFirst({ where: { name: name.trim() } });
+    if (existing) {
+      res.status(409).json({ error: "A client with this name already exists", errorAr: "يوجد عميل بنفس الاسم بالفعل" });
       return;
     }
 
@@ -103,8 +136,44 @@ router.patch("/clients/:id", requireAuth, requirePermission("clients.edit"), asy
 
     const existing = await prisma.client.findUnique({ where: { id: req.params.id } });
     if (!existing) {
-      res.status(404).json({ error: "Client not found" });
+      res.status(404).json({ error: "Client not found", errorAr: "العميل غير موجود" });
       return;
+    }
+
+    // Validate email format if provided
+    if (email) {
+      const emailResult = isEmail(email, "Email");
+      if (!emailResult.valid) {
+        res.status(400).json({ error: emailResult.error, errorAr: emailResult.errorAr });
+        return;
+      }
+    }
+
+    // Validate phone format if provided
+    if (phone) {
+      const phoneResult = isPhone(phone, "Phone");
+      if (!phoneResult.valid) {
+        res.status(400).json({ error: phoneResult.error, errorAr: phoneResult.errorAr });
+        return;
+      }
+    }
+
+    // Validate name length if provided
+    if (name) {
+      const nameResult = maxLength(name, "Name", 200);
+      if (!nameResult.valid) {
+        res.status(400).json({ error: nameResult.error, errorAr: nameResult.errorAr });
+        return;
+      }
+    }
+
+    // Check for duplicate client name (excluding current)
+    if (name && name.trim() !== existing.name) {
+      const duplicate = await prisma.client.findFirst({ where: { name: name.trim() } });
+      if (duplicate) {
+        res.status(409).json({ error: "A client with this name already exists", errorAr: "يوجد عميل بنفس الاسم بالفعل" });
+        return;
+      }
     }
 
     const client = await prisma.client.update({

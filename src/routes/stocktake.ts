@@ -143,56 +143,63 @@ router.post("/stocktake/sessions/:id/approve", requireAuth, requirePermission("s
     const countable = session.items.filter(it => it.actualCount !== null && !it.exclusionReason);
     if (countable.length === 0) { res.status(400).json({ error: "No counted items to approve" }); return; }
 
-    let updated = 0;
-    let totalIncrease = 0;
-    let totalDecrease = 0;
-    const logs: any[] = [];
+    // Execute all stock updates + logs in a single transaction for data integrity
+    const result = await prisma.$transaction(async (tx) => {
+      let updated = 0;
+      let totalIncrease = 0;
+      let totalDecrease = 0;
+      const logs: any[] = [];
 
-    for (const item of countable) {
-      const product = await prisma.product.findFirst({ where: { id: item.productId, deletedAt: null } });
-      if (!product) continue;
+      for (const item of countable) {
+        const product = await tx.product.findFirst({ where: { id: item.productId, deletedAt: null } });
+        if (!product) continue;
 
-      const oldStock = product.stock;
-      const newStock = item.actualCount!;
-      const change = newStock - oldStock;
+        const oldStock = product.stock;
+        const newStock = item.actualCount!;
+        const change = newStock - oldStock;
 
-      if (change === 0) continue;
+        if (change === 0) continue;
 
-      await prisma.product.update({
-        where: { id: item.productId },
-        data: { stock: newStock },
+        await tx.product.update({
+          where: { id: item.productId },
+          data: { stock: newStock },
+        });
+
+        const log = await tx.inventoryLog.create({
+          data: {
+            type: "stocktake",
+            productId: item.productId,
+            oldStock,
+            newStock,
+            change,
+            notes: item.note || null,
+            referenceType: "stocktake",
+            referenceId: session.id,
+            userId: req.user?.userId,
+            userName: req.user?.name,
+            userRole: req.user?.role,
+            entityType: "stocktake",
+            entityId: session.id,
+            beforeData: { stock: oldStock },
+            afterData: { stock: newStock },
+          },
+        });
+
+        logs.push(log);
+        updated++;
+        if (change > 0) totalIncrease += change;
+        if (change < 0) totalDecrease += Math.abs(change);
+      }
+
+      await tx.stocktakeSession.update({
+        where: { id: req.params.id },
+        data: { status: "completed" },
       });
 
-      const log = await prisma.inventoryLog.create({
-        data: {
-          type: "stocktake",
-          productId: item.productId,
-          oldStock,
-          newStock,
-          change,
-          notes: item.note || null,
-          referenceType: "stocktake",
-          referenceId: session.id,
-          userId: req.user?.userId,
-          userName: req.user?.name,
-          userRole: req.user?.role,
-          entityType: "stocktake",
-          entityId: session.id,
-          beforeData: { stock: oldStock },
-          afterData: { stock: newStock },
-        },
-      });
-
-      logs.push(log);
-      updated++;
-      if (change > 0) totalIncrease += change;
-      if (change < 0) totalDecrease += Math.abs(change);
-    }
-
-    await prisma.stocktakeSession.update({
-      where: { id: req.params.id },
-      data: { status: "completed" },
+      return { updated, totalIncrease, totalDecrease, logsCount: logs.length };
     });
+
+    const { updated, totalIncrease, totalDecrease, logsCount } = result;
 
     res.json({
       summary: {
@@ -202,7 +209,7 @@ router.post("/stocktake/sessions/:id/approve", requireAuth, requirePermission("s
         updatedProducts: updated,
         totalIncrease,
         totalDecrease,
-        logsCreated: logs.length,
+        logsCreated: logsCount,
       },
     });
   } catch (e) { next(e); }

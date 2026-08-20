@@ -365,6 +365,10 @@ router.post("/purchase-orders/:id/receive", requireAuth, requirePermission("purc
 
     await prisma.$transaction(async (tx) => {
       for (const u of updates) {
+        // Read current stock BEFORE increment for accurate inventory log
+        const stockBefore = await tx.product.findUnique({ where: { id: u.productId }, select: { stock: true, name: true } });
+        const oldStock = stockBefore?.stock ?? 0;
+
         if (u.acceptedQty > 0) {
           await tx.product.update({
             where: { id: u.productId },
@@ -382,15 +386,15 @@ router.post("/purchase-orders/:id/receive", requireAuth, requirePermission("purc
         });
 
         if (u.acceptedQty > 0) {
-          const productBefore = await tx.product.findUnique({ where: { id: u.productId }, select: { name: true } });
+          const newStock = oldStock + u.acceptedQty;
           await tx.inventoryLog.create({
             data: {
               productId: u.productId,
               type: "purchase_receive",
               change: u.acceptedQty,
-              oldStock: 0,
-              newStock: u.acceptedQty,
-              notes: `استلام وارد أمر الشراء ${order.orderNumber} — ${productBefore?.name || ""}`,
+              oldStock,
+              newStock,
+              notes: `استلام وارد أمر الشراء ${order.orderNumber} — ${stockBefore?.name || ""}`,
               referenceType: "purchase_order",
               referenceId: order.id,
               userId: req.user?.userId,
@@ -398,8 +402,8 @@ router.post("/purchase-orders/:id/receive", requireAuth, requirePermission("purc
               userRole: req.user?.role,
               entityType: "purchase_order",
               entityId: order.id,
-              beforeData: { stock: 0 },
-              afterData: { stock: u.acceptedQty },
+              beforeData: { stock: oldStock },
+              afterData: { stock: newStock },
             },
           });
         }

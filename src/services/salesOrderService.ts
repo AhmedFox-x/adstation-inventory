@@ -468,6 +468,7 @@ async function executeConfirmedTransition(
         productId: item.productId,
         clientId: fresh.clientId,
         salesOrderItemId: item.id,
+        warehouseId: (item as any).warehouseId || "default",
         quantity: item.orderedQty,
         fulfilledQty: 0,
         status: "active",

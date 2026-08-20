@@ -1,0 +1,13 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "baseUrl": ".",
+    "noEmit": true,
+    "paths": {
+      "@prisma/client": [".prisma-test-client"]
+    }
+  },
+  "include": ["src/**/*", "tests/**/*", "scripts/**/*", "jest.global-setup.ts"],
+  "exclude": ["node_modules", "dist", "scripts/backup.ts", "scripts/restore.ts"]
+}

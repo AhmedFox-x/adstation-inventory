@@ -72,7 +72,7 @@ router.get("/reservations/:id", requireAuth, requirePermission("reservations.vie
 // POST /reservations — إنشاء حجز جديد
 router.post("/reservations", requireAuth, requirePermission("reservations.create"), async (req: AuthRequest, res, next) => {
   try {
-    const { productId, clientId, quantity, notes, expiresAt } = req.body;
+    const { productId, clientId, warehouseId, quantity, notes, expiresAt } = req.body;
 
     if (!productId || !quantity || quantity <= 0) {
       res.status(400).json({ error: "Product ID and positive quantity are required" });
@@ -100,6 +100,7 @@ router.post("/reservations", requireAuth, requirePermission("reservations.create
         data: {
           productId,
           clientId: clientId || null,
+          warehouseId: warehouseId || "default",
           quantity,
           notes: notes || null,
           expiresAt: expiresAt ? new Date(expiresAt) : null,

@@ -16,6 +16,7 @@ router.get('/reports/value', requireAuth, requirePermission('reports.view'), asy
     const products = await prisma.product.findMany({
       where: { deletedAt: null },
       select: { id: true, name: true, variant: true, stock: true, price: true, category: true },
+      take: 10000, // Safety limit — prevents memory issues at extreme scale
     })
 
     let totalValue = 0
@@ -67,6 +68,7 @@ router.get('/reports/abc', requireAuth, requirePermission('reports.view'), async
     const products = await prisma.product.findMany({
       where: { deletedAt: null },
       select: { id: true, name: true, variant: true, price: true },
+      take: 10000, // Safety limit
     })
 
     // مجموع الكميات المصروفة تاريخيًا لكل منتج (النوع 'withdraw' في السجل)

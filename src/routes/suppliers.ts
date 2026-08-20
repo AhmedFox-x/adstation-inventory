@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { prisma } from "../config/database";
 import { requireAuth, requirePermission, AuthRequest } from "../middleware/auth";
+import { isEmail, isPhone, maxLength } from "../lib/validation";
 
 const router = Router();
 
@@ -75,7 +76,39 @@ router.post("/suppliers", requireAuth, requirePermission("suppliers.create"), as
     const { name, phone, email, address, paymentTerms, notes } = req.body;
 
     if (!name || !name.trim()) {
-      res.status(400).json({ error: "Supplier name is required" });
+      res.status(400).json({ error: "Supplier name is required", errorAr: "اسم المورد مطلوب" });
+      return;
+    }
+
+    // Validate email format if provided
+    if (email) {
+      const emailResult = isEmail(email, "Email");
+      if (!emailResult.valid) {
+        res.status(400).json({ error: emailResult.error, errorAr: emailResult.errorAr });
+        return;
+      }
+    }
+
+    // Validate phone format if provided
+    if (phone) {
+      const phoneResult = isPhone(phone, "Phone");
+      if (!phoneResult.valid) {
+        res.status(400).json({ error: phoneResult.error, errorAr: phoneResult.errorAr });
+        return;
+      }
+    }
+
+    // Validate name length
+    const nameResult = maxLength(name, "Name", 200);
+    if (!nameResult.valid) {
+      res.status(400).json({ error: nameResult.error, errorAr: nameResult.errorAr });
+      return;
+    }
+
+    // Check for duplicate supplier name
+    const existingSupplier = await prisma.supplier.findFirst({ where: { name: name.trim() } });
+    if (existingSupplier) {
+      res.status(409).json({ error: "A supplier with this name already exists", errorAr: "يوجد مورد بنفس الاسم بالفعل" });
       return;
     }
 
@@ -104,8 +137,44 @@ router.patch("/suppliers/:id", requireAuth, requirePermission("suppliers.edit"),
 
     const existing = await prisma.supplier.findUnique({ where: { id: req.params.id } });
     if (!existing) {
-      res.status(404).json({ error: "Supplier not found" });
+      res.status(404).json({ error: "Supplier not found", errorAr: "المورد غير موجود" });
       return;
+    }
+
+    // Validate email format if provided
+    if (email) {
+      const emailResult = isEmail(email, "Email");
+      if (!emailResult.valid) {
+        res.status(400).json({ error: emailResult.error, errorAr: emailResult.errorAr });
+        return;
+      }
+    }
+
+    // Validate phone format if provided
+    if (phone) {
+      const phoneResult = isPhone(phone, "Phone");
+      if (!phoneResult.valid) {
+        res.status(400).json({ error: phoneResult.error, errorAr: phoneResult.errorAr });
+        return;
+      }
+    }
+
+    // Validate name length if provided
+    if (name) {
+      const nameResult = maxLength(name, "Name", 200);
+      if (!nameResult.valid) {
+        res.status(400).json({ error: nameResult.error, errorAr: nameResult.errorAr });
+        return;
+      }
+    }
+
+    // Check for duplicate supplier name (excluding current)
+    if (name && name.trim() !== existing.name) {
+      const duplicate = await prisma.supplier.findFirst({ where: { name: name.trim() } });
+      if (duplicate) {
+        res.status(409).json({ error: "A supplier with this name already exists", errorAr: "يوجد مورد بنفس الاسم بالفعل" });
+        return;
+      }
     }
 
     const supplier = await prisma.supplier.update({

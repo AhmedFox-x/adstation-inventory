@@ -104,10 +104,12 @@ export async function checkAndSendAlerts(products: LowStockProduct[]): Promise<v
 
 // ── Get all currently low-stock products (for manual check / API) ────────────
 export async function getLowStockProducts(prisma: any): Promise<LowStockProduct[]> {
-  return prisma.product.findMany({
-    where: { deletedAt: null, stock: { lte: prisma.product.fields?.minStock || 5 } },
+  // Prisma can't compare two fields in a where clause, so fetch candidates and filter in JS
+  const candidates = await prisma.product.findMany({
+    where: { deletedAt: null, minStock: { gt: 0 } },
     select: { id: true, name: true, stock: true, minStock: true, category: true },
-  }) as Promise<LowStockProduct[]>;
+  });
+  return candidates.filter((p: LowStockProduct) => p.stock <= p.minStock);
 }
 
 // ── Manual check endpoint helper ─────────────────────────────────────────────
