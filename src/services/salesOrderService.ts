@@ -256,6 +256,19 @@ export async function createOrder(client: PrismaClient, input: CreateOrderInput,
     }
     const clientName = await getClientName(tx, input.clientId);
 
+    const stockWarnings: string[] = [];
+    for (const it of input.items) {
+      const p = productMap.get(it.productId)!;
+      const available = (p.stock ?? 0) - (p.reservedStock ?? 0);
+      const qty = Number(it.orderedQty);
+      if (qty > available) {
+        stockWarnings.push(`${p.name}: available ${available}, ordered ${qty}`);
+      }
+    }
+    if (stockWarnings.length > 0) {
+      throw new SalesOrderError(`Insufficient stock: ${stockWarnings.join('; ')}`, 409);
+    }
+
     const order = await tx.salesOrder.create({
       data: {
         orderNumber,
@@ -330,6 +343,19 @@ export async function updateOrder(client: PrismaClient, id: string, input: Updat
       if (!productMap.has(it.productId)) throw new SalesOrderError(`Product not found: ${it.productId}`, 404);
     }
     const clientName = await getClientName(tx, input.clientId);
+
+    const stockWarnings: string[] = [];
+    for (const it of input.items) {
+      const p = productMap.get(it.productId)!;
+      const available = (p.stock ?? 0) - (p.reservedStock ?? 0);
+      const qty = Number(it.orderedQty);
+      if (qty > available) {
+        stockWarnings.push(`${p.name}: available ${available}, ordered ${qty}`);
+      }
+    }
+    if (stockWarnings.length > 0) {
+      throw new SalesOrderError(`Insufficient stock: ${stockWarnings.join('; ')}`, 409);
+    }
 
     await tx.salesOrderItem.deleteMany({ where: { orderId: id } });
 
