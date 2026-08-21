@@ -280,21 +280,18 @@ async function fixProductImageUrls() {
 }
 
 async function fixWarehouseNames() {
-  // Fix corrupted warehouse names (stored as '?' due to encoding issues during initial seed)
-  const fixes: Array<{ where: string; name: string }> = [
-    { where: "MAIN", name: "المخزن الأساسي" },
-    { where: "QUARANTINE", name: "مخزن لطفي" },
-  ];
-  for (const f of fixes) {
-    try {
-      const wh = await prisma.warehouse.findFirst({ where: { type: f.where, deletedAt: null } });
-      if (wh && wh.name !== f.name) {
-        await prisma.warehouse.update({ where: { id: wh.id }, data: { name: f.name } });
-        console.log(`  🏭 Fixed warehouse name: "${wh.name}" → "${f.name}"`);
-      }
-    } catch (e) {
-      console.log(`  ⚠️ Warehouse name fix skipped for ${f.where}:`, (e as Error).message);
-    }
+  // Fix corrupted warehouse names using raw SQL to bypass Prisma encoding issues
+  try {
+    const mainResult = await prisma.$executeRawUnsafe(
+      `UPDATE "Warehouse" SET "name" = 'المخزن الأساسي' WHERE "type" = 'MAIN' AND ("name" IS NULL OR "name" != 'المخزن الأساسي') AND "deletedAt" IS NULL`
+    );
+    if (mainResult > 0) console.log(`  🏭 Fixed MAIN warehouse name → المخزن الأساسي (${mainResult} row)`);
+    const quarResult = await prisma.$executeRawUnsafe(
+      `UPDATE "Warehouse" SET "name" = 'مخزن لطفي' WHERE "type" = 'QUARANTINE' AND ("name" IS NULL OR "name" != 'مخزن لطفي') AND "deletedAt" IS NULL`
+    );
+    if (quarResult > 0) console.log(`  🏭 Fixed QUARANTINE warehouse name → مخزن لطفي (${quarResult} row)`);
+  } catch (e) {
+    console.log("  ⚠️ Warehouse name fix error:", (e as Error).message);
   }
 }
 
