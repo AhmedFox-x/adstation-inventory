@@ -175,6 +175,18 @@ app.post("/api/inventory/alerts/check", requireAuth, async (_req, res) => {
   }
 });
 
+// TEMP: fix warehouse names — remove after use
+app.post("/api/inventory/admin/fix-warehouse-names", requireAuth, async (_req, res) => {
+  try {
+    const mainResult = await prisma.$executeRaw`UPDATE "Warehouse" SET "name" = ${'المخزن الأساسي'} WHERE "type" = 'MAIN' AND "deletedAt" IS NULL`;
+    const quarResult = await prisma.$executeRaw`UPDATE "Warehouse" SET "name" = ${'مخزن لطفي'} WHERE "type" = 'QUARANTINE' AND "deletedAt" IS NULL`;
+    const rows = await prisma.$queryRaw`SELECT "id", "name", "type" FROM "Warehouse" WHERE "deletedAt" IS NULL`;
+    res.json({ mainResult, quarResult, rows });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message, stack: e.stack });
+  }
+});
+
 // ─── Static files (Production) ───────────────────────────────────────────────
 const distPath = process.env.NODE_ENV === "production"
   ? path.resolve(__dirname, "../public")
