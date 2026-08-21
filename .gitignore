@@ -5,6 +5,6 @@
 *.pfx
 *.pem
 dist/
-public/uploads/
-import-data/images/
+public/uploads/avatars/
+public/uploads/temp/
 .playwright-mcp/
