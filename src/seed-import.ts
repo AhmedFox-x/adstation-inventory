@@ -67,13 +67,18 @@ async function main() {
     if (fixed > 0) console.log(`✏️  Fixed ${fixed} product imageUrls to match import data`);
     else console.log(`✅ All imageUrls already correct`);
 
-    // Fix corrupted warehouse names
-    const mainName = 'المخزن الأساسي';
-    const quarName = 'مخزن لطفي';
+    // Fix corrupted warehouse names using ORM (raw SQL corrupts Arabic)
     try {
-      const mainR = await prisma.$executeRaw`UPDATE "Warehouse" SET "name" = ${mainName} WHERE "type" = 'MAIN' AND "deletedAt" IS NULL`;
-      const quarR = await prisma.$executeRaw`UPDATE "Warehouse" SET "name" = ${quarName} WHERE "type" = 'QUARANTINE' AND "deletedAt" IS NULL`;
-      console.log(`  🏭 Warehouse names fixed: MAIN=${mainR}, QUARANTINE=${quarR}`);
+      const mainWh = await prisma.warehouse.findFirst({ where: { type: 'MAIN' } });
+      if (mainWh) {
+        await prisma.warehouse.update({ where: { id: mainWh.id }, data: { name: 'المخزن الأساسي' } });
+        console.log(`  🏭 Fixed MAIN warehouse name`);
+      }
+      const quarWh = await prisma.warehouse.findFirst({ where: { type: 'QUARANTINE' } });
+      if (quarWh) {
+        await prisma.warehouse.update({ where: { id: quarWh.id }, data: { name: 'مخزن لطفي' } });
+        console.log(`  🏭 Fixed QUARANTINE warehouse name`);
+      }
     } catch (e: any) {
       console.log(`  ⚠️ Warehouse name fix failed:`, e.message);
     }
