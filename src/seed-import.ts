@@ -51,7 +51,7 @@ async function main() {
     for (const p of products) {
       const name = (p.name || "").trim();
       if (name && p.image && !nameToImage.has(name)) {
-        nameToImage.set(name, `/uploads/products/images/${p.image}`);
+        nameToImage.set(name, `/uploads/products/${p.image}`);
       }
     }
 

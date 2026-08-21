@@ -268,8 +268,44 @@ async function syncProductStockToWarehouses() {
   }
 }
 
+async function fixProductImageUrls() {
+  // Fix broken image URLs: /uploads/products/images/X → /uploads/products/X
+  // Images are stored in public/uploads/products/ (no images/ subfolder).
+  try {
+    const result = await prisma.$executeRaw`UPDATE "Product" SET "imageUrl" = REPLACE("imageUrl", '/uploads/products/images/', '/uploads/products/') WHERE "imageUrl" LIKE '%/uploads/products/images/%'`;
+    if (result > 0) console.log(`  🖼️  Fixed ${result} product imageUrls (removed /images/ from path)`);
+  } catch (e) {
+    console.log("  ⚠️ Image URL fix skipped:", (e as Error).message);
+  }
+}
+
+async function fixWarehouseNames() {
+  // Fix corrupted warehouse names (stored as '?' due to encoding issues during initial seed)
+  const fixes: Array<{ where: string; name: string }> = [
+    { where: "MAIN", name: "المخزن الأساسي" },
+    { where: "QUARANTINE", name: "مخزن لطفي" },
+  ];
+  for (const f of fixes) {
+    try {
+      const wh = await prisma.warehouse.findFirst({ where: { type: f.where, deletedAt: null } });
+      if (wh && wh.name !== f.name) {
+        await prisma.warehouse.update({ where: { id: wh.id }, data: { name: f.name } });
+        console.log(`  🏭 Fixed warehouse name: "${wh.name}" → "${f.name}"`);
+      }
+    } catch (e) {
+      console.log(`  ⚠️ Warehouse name fix skipped for ${f.where}:`, (e as Error).message);
+    }
+  }
+}
+
 function startServer() {
-  seedRoles().then(() => seedBarcodes()).then(() => migrateTransferStatuses()).then(() => syncProductStockToWarehouses()).then(() => {
+  seedRoles()
+    .then(() => seedBarcodes())
+    .then(() => migrateTransferStatuses())
+    .then(() => syncProductStockToWarehouses())
+    .then(() => fixProductImageUrls())
+    .then(() => fixWarehouseNames())
+    .then(() => {
     app.listen(PORT, () => {
       console.log(`\n📦  AD Station Inventory API running on http://localhost:${PORT}`);
       console.log(`   Environment: ${process.env.NODE_ENV || "development"}\n`);
