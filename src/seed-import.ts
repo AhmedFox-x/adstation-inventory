@@ -66,6 +66,18 @@ async function main() {
     }
     if (fixed > 0) console.log(`✏️  Fixed ${fixed} product imageUrls to match import data`);
     else console.log(`✅ All imageUrls already correct`);
+
+    // Fix corrupted warehouse names
+    const mainName = 'المخزن الأساسي';
+    const quarName = 'مخزن لطفي';
+    try {
+      const mainR = await prisma.$executeRaw`UPDATE "Warehouse" SET "name" = ${mainName} WHERE "type" = 'MAIN' AND "deletedAt" IS NULL`;
+      const quarR = await prisma.$executeRaw`UPDATE "Warehouse" SET "name" = ${quarName} WHERE "type" = 'QUARANTINE' AND "deletedAt" IS NULL`;
+      console.log(`  🏭 Warehouse names fixed: MAIN=${mainR}, QUARANTINE=${quarR}`);
+    } catch (e: any) {
+      console.log(`  ⚠️ Warehouse name fix failed:`, e.message);
+    }
+
     return;
   }
 
