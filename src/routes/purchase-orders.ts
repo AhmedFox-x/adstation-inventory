@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { prisma } from "../config/database";
 import { requireAuth, requirePermission, AuthRequest } from "../middleware/auth";
+import { validatePhone, formatPOMessage, getWhatsAppProvider } from "../services/whatsappService";
 
 const router = Router();
 
@@ -254,21 +255,61 @@ router.post("/purchase-orders/:id/approve", requireAuth, requirePermission("purc
 });
 
 // ── POST /purchase-orders/:id/send — approved → sent ───────────────────────────
-router.post("/purchase-orders/:id/send", requireAuth, requirePermission("purchase_orders.edit"), async (req: AuthRequest, res) => {
+router.post("/purchase-orders/:id/send", requireAuth, requirePermission("purchase_orders.send"), async (req: AuthRequest, res) => {
   try {
-    const existing = await prisma.purchaseOrder.findUnique({ where: { id: req.params.id } });
+    const existing = await prisma.purchaseOrder.findUnique({
+      where: { id: req.params.id },
+      include: { supplier: true, items: { include: { product: { select: { name: true } } } } },
+    });
     if (!existing) { res.status(404).json({ error: "Purchase order not found" }); return; }
     if (!canTransition(existing.status, "sent")) { res.status(400).json({ error: `Cannot send order in "${existing.status}" status` }); return; }
+    if (!existing.supplier.phone) { res.status(400).json({ error: "Supplier has no phone number. Please add a phone number to the supplier before sending." }); return; }
+    if (!validatePhone(existing.supplier.phone)) { res.status(400).json({ error: "Supplier phone number is invalid. Please update the supplier phone." }); return; }
+
+    const message = formatPOMessage(
+      existing.orderNumber,
+      existing.supplier.name,
+      existing.items.map((it) => ({ productName: it.product.name, quantity: it.quantity, unitPrice: it.unitPrice || 0 })),
+      existing.grandTotal || 0,
+      existing.expectedDeliveryDate?.toISOString()
+    );
+
+    const provider = getWhatsAppProvider();
+    const sendResult = await provider.send(existing.supplier.phone, message, {
+      orderNumber: existing.orderNumber,
+      orderId: existing.id,
+    });
+
+    if (!sendResult.success) {
+      res.status(400).json({ error: sendResult.error || "Failed to send via WhatsApp" });
+      return;
+    }
 
     const order = await prisma.purchaseOrder.update({
       where: { id: req.params.id },
       data: {
         status: "sent",
-        statusHistory: { create: { fromStatus: existing.status, toStatus: "sent", changedBy: req.user?.email || "system", note: "تم إرسال الطلب للمورد" } },
+        sentAt: new Date(),
+        sentBy: req.user?.email || "system",
+        sentChannel: sendResult.channel,
+        sentRecipient: sendResult.recipientPhone,
+        sentMessageId: sendResult.messageId || null,
+        statusHistory: {
+          create: {
+            fromStatus: existing.status,
+            toStatus: "sent",
+            changedBy: req.user?.email || "system",
+            note: `تم إرسال الطلب عبر ${sendResult.channel === "whatsapp_deeplink" ? "WhatsApp" : sendResult.channel} إلى ${sendResult.recipientPhone}`,
+          },
+        },
       },
-      include: { supplier: { select: { id: true, name: true } }, items: { include: { product: { select: { id: true, name: true, barcode: true } } } }, statusHistory: { orderBy: { createdAt: "asc" } } },
+      include: {
+        supplier: { select: { id: true, name: true } },
+        items: { include: { product: { select: { id: true, name: true, barcode: true } } } },
+        statusHistory: { orderBy: { createdAt: "asc" } },
+      },
     });
-    res.json({ order });
+    res.json({ order, deepLinkUrl: sendResult.deepLinkUrl, channel: sendResult.channel });
   } catch (err: any) {
     console.error("[PO Send]", err?.message || err);
     if (!res.headersSent) res.status(500).json({ error: "Failed to send purchase order" });

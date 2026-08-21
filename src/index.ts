@@ -200,6 +200,10 @@ app.get("*", (req, res) => {
 app.use(errorHandler);
 
 // ─── Start ────────────────────────────────────────────────────────────────────
+// NOTE: "prisma migrate deploy" runs in package.json start script before this
+// process starts. Every restart applies pending migrations. This is intentional
+// for Railway deployments where migrations must apply automatically on deploy.
+// Railway logs show migration output for monitoring.
 import https from "https";
 import fs from "fs";
 
@@ -211,8 +215,61 @@ const certDir = path.resolve(__dirname, "../certs");
 const certPemPath = path.join(certDir, "cert.pem");
 const keyPemPath = path.join(certDir, "key.pem");
 
+async function migrateTransferStatuses() {
+  // Idempotent: only touches rows with status='pending' (no-op when none exist).
+  // Once all pending rows are migrated, this becomes a zero-row UPDATE.
+  try {
+    const result = await prisma.$executeRaw`UPDATE "Transfer" SET "status" = 'draft' WHERE "status" = 'pending'`;
+    if (result > 0) console.log(`  ✅ Migrated ${result} pending transfer(s) to draft`);
+  } catch (e) {
+    console.log("  ⚠️ Transfer status migration skipped:", (e as Error).message);
+  }
+}
+
+async function syncProductStockToWarehouses() {
+  // Data reconciliation — preserves invariant: Product.stock = Σ WarehouseStock.quantity for that product.
+  // Only creates missing WarehouseStock rows; does NOT overwrite existing quantities.
+  // Called at boot because WarehouseStock may not exist for legacy products created before multi-warehouse support.
+  try {
+    const mainWh = await prisma.warehouse.findFirst({ where: { type: "MAIN", isActive: true, deletedAt: null } });
+    if (!mainWh) { console.log("  ⚠️ No MAIN warehouse found — skipping stock sync"); return; }
+
+    const products = await prisma.product.findMany({ where: { deletedAt: null, stock: { gt: 0 } } });
+    let created = 0, verified = 0, mismatched = 0;
+    for (const p of products) {
+      const ws = await prisma.warehouseStock.findUnique({
+        where: { warehouseId_productId: { warehouseId: mainWh.id, productId: p.id } },
+      });
+      if (!ws) {
+        await prisma.warehouseStock.create({
+          data: { warehouseId: mainWh.id, productId: p.id, quantity: p.stock, reservedQuantity: 0 },
+        });
+        console.log(`    📦 Created MAIN stock for "${p.name}": qty=${p.stock}`);
+        created++;
+      } else {
+        // Invariant check: if mismatch, log warning (does NOT auto-correct — that requires manual review)
+        const totalInWarehouses = await prisma.warehouseStock.aggregate({
+          where: { productId: p.id },
+          _sum: { quantity: true },
+        });
+        const warehouseTotal = totalInWarehouses._sum.quantity || 0;
+        if (warehouseTotal !== p.stock) {
+          console.log(`    ⚠️ Stock mismatch for "${p.name}": Product.stock=${p.stock}, Σ WarehouseStock=${warehouseTotal}`);
+          mismatched++;
+        }
+        verified++;
+      }
+    }
+    if (created > 0 || mismatched > 0) {
+      console.log(`  📊 Stock sync: ${created} created, ${verified} verified, ${mismatched} mismatched`);
+    }
+  } catch (e) {
+    console.log("  ⚠️ Stock sync skipped:", (e as Error).message);
+  }
+}
+
 function startServer() {
-  seedRoles().then(() => seedBarcodes()).then(() => {
+  seedRoles().then(() => seedBarcodes()).then(() => migrateTransferStatuses()).then(() => syncProductStockToWarehouses()).then(() => {
     app.listen(PORT, () => {
       console.log(`\n📦  AD Station Inventory API running on http://localhost:${PORT}`);
       console.log(`   Environment: ${process.env.NODE_ENV || "development"}\n`);

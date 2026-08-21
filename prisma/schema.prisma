@@ -277,6 +277,11 @@ model PurchaseOrder {
   createdBy            String?
   approvedBy           String?
   approvedAt           DateTime?
+  sentAt               DateTime?
+  sentBy               String?
+  sentChannel          String?
+  sentRecipient        String?
+  sentMessageId        String?
   createdAt            DateTime @default(now())
   updatedAt            DateTime @updatedAt
 
@@ -620,13 +625,23 @@ model Transfer {
   transferNumber  String    @unique
   fromWarehouseId String
   toWarehouseId   String
-  status          String    @default("pending")
+  status          String    @default("draft")
   notes           String?
   createdBy       String?
   createdByName   String?
+  confirmedBy     String?
+  confirmedByName String?
+  confirmedAt     DateTime?
   executedBy      String?
   executedByName  String?
   executedAt      DateTime?
+  cancelledBy     String?
+  cancelledByName String?
+  cancelledAt     DateTime?
+  cancelNote      String?
+  receivedBy      String?
+  receivedByName  String?
+  receivedAt      DateTime?
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 
