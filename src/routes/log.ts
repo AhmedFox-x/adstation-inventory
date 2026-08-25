@@ -471,4 +471,46 @@ router.get("/report", requireAuth, requirePermission("reports.view"), async (req
   }
 });
 
+// ── POST /api/inventory/log/batch — Bulk create inventory log entries ─────────
+router.post("/log/batch", requireAuth, requirePermission("logs.view"), async (req: any, res, next) => {
+  try {
+    const { entries } = req.body;
+    if (!Array.isArray(entries) || entries.length === 0) {
+      res.status(400).json({ error: "entries array is required" });
+      return;
+    }
+    if (entries.length > 500) {
+      res.status(400).json({ error: "Max 500 entries per batch" });
+      return;
+    }
+
+    const user = req.user;
+    const created = await prisma.inventoryLog.createMany({
+      data: entries.map((e: any) => ({
+        type: e.type || "manual_adjust",
+        productId: e.productId,
+        oldStock: e.oldStock ?? 0,
+        newStock: e.newStock ?? 0,
+        change: e.change ?? 0,
+        clientName: e.clientName || null,
+        salesName: e.salesName || null,
+        notes: e.notes || null,
+        referenceType: e.referenceType || null,
+        referenceId: e.referenceId || null,
+        userId: e.userId || user?.userId || null,
+        userName: e.userName || user?.name || null,
+        userRole: e.userRole || user?.role || null,
+        entityType: e.entityType || "product",
+        entityId: e.entityId || e.productId,
+        beforeData: e.beforeData || null,
+        afterData: e.afterData || null,
+      })),
+    });
+
+    res.status(201).json({ created: created.count });
+  } catch (err) {
+    next(err);
+  }
+});
+
 export default router;
