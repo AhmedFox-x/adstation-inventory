@@ -2,6 +2,7 @@ import { Router } from "express";
 import { prisma } from "../config/database";
 import { requireAuth, requirePermission, AuthRequest } from "../middleware/auth";
 import { validatePhone, formatPOMessage, getWhatsAppProvider } from "../services/whatsappService";
+import { applyPurchaseToProduct } from "../services/costService";
 
 const router = Router();
 
@@ -407,7 +408,7 @@ router.post("/purchase-orders/:id/receive", requireAuth, requirePermission("purc
     await prisma.$transaction(async (tx) => {
       for (const u of updates) {
         // Read current stock BEFORE increment for accurate inventory log
-        const stockBefore = await tx.product.findUnique({ where: { id: u.productId }, select: { stock: true, name: true } });
+        const stockBefore = await tx.product.findUnique({ where: { id: u.productId }, select: { stock: true, name: true, costPrice: true } });
         const oldStock = stockBefore?.stock ?? 0;
 
         if (u.acceptedQty > 0) {
@@ -415,6 +416,15 @@ router.post("/purchase-orders/:id/receive", requireAuth, requirePermission("purc
             where: { id: u.productId },
             data: { stock: { increment: u.acceptedQty } },
           });
+
+          // Update Moving Average Cost from PO item unit price
+          const poItem = order.items.find(i => i.id === u.itemId);
+          if (poItem && poItem.unitPrice && poItem.unitPrice > 0) {
+            await applyPurchaseToProduct(
+              tx, u.productId, u.acceptedQty, poItem.unitPrice,
+              order.actualDeliveryDate || new Date()
+            );
+          }
         }
 
         await tx.purchaseOrderItem.update({
@@ -428,6 +438,8 @@ router.post("/purchase-orders/:id/receive", requireAuth, requirePermission("purc
 
         if (u.acceptedQty > 0) {
           const newStock = oldStock + u.acceptedQty;
+          // Read updated cost after applyPurchaseToProduct
+          const updatedProduct = await tx.product.findUnique({ where: { id: u.productId }, select: { costPrice: true } });
           await tx.inventoryLog.create({
             data: {
               productId: u.productId,
@@ -443,8 +455,8 @@ router.post("/purchase-orders/:id/receive", requireAuth, requirePermission("purc
               userRole: req.user?.role,
               entityType: "purchase_order",
               entityId: order.id,
-              beforeData: { stock: oldStock },
-              afterData: { stock: newStock },
+              beforeData: { stock: oldStock, costPrice: stockBefore?.costPrice ?? null },
+              afterData: { stock: newStock, costPrice: updatedProduct?.costPrice ?? null },
             },
           });
         }

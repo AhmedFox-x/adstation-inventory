@@ -15,18 +15,21 @@ router.get('/reports/value', requireAuth, requirePermission('reports.view'), asy
   try {
     const products = await prisma.product.findMany({
       where: { deletedAt: null },
-      select: { id: true, name: true, variant: true, stock: true, price: true, category: true },
-      take: 10000, // Safety limit — prevents memory issues at extreme scale
+      select: { id: true, name: true, variant: true, stock: true, price: true, category: true, costPrice: true },
+      take: 10000,
     })
 
     let totalValue = 0
-    let productsWithoutPrice = 0
+    let productsWithoutCost = 0
+    let productsWithCost = 0
     const categoryMap = new Map<string, { value: number; count: number; stock: number }>()
 
     for (const p of products) {
-      const price = p.price ?? 0
-      if (!p.price || p.price <= 0) productsWithoutPrice++
-      const value = price * p.stock
+      // Prefer costPrice (actual purchase cost), fallback to price (selling)
+      const valuation = p.costPrice && p.costPrice > 0 ? p.costPrice : (p.price ?? 0)
+      if (!p.costPrice || p.costPrice <= 0) productsWithoutCost++
+      else productsWithCost++
+      const value = valuation * p.stock
       totalValue += value
 
       const catKey = p.category?.trim() || 'غير مصنّف'
@@ -42,14 +45,23 @@ router.get('/reports/value', requireAuth, requirePermission('reports.view'), asy
       .sort((a, b) => b.value - a.value)
 
     const topProducts = products
-      .map(p => ({ id: p.id, name: p.name, variant: p.variant, stock: p.stock, price: p.price ?? 0, value: (p.price ?? 0) * p.stock }))
+      .map(p => {
+        const valuation = p.costPrice && p.costPrice > 0 ? p.costPrice : (p.price ?? 0)
+        return {
+          id: p.id, name: p.name, variant: p.variant, stock: p.stock,
+          price: p.price ?? 0, costPrice: p.costPrice ?? null,
+          value: valuation * p.stock,
+          valueSource: p.costPrice && p.costPrice > 0 ? 'cost' : 'selling_price',
+        }
+      })
       .sort((a, b) => b.value - a.value)
       .slice(0, 10)
 
     res.json({
       totalValue,
       totalProducts: products.length,
-      productsWithoutPrice,
+      productsWithCost,
+      productsWithoutCost,
       averageUnitPrice: products.length ? totalValue / Math.max(1, products.reduce((s, p) => s + p.stock, 0)) : 0,
       byCategory,
       topProducts,
@@ -67,8 +79,8 @@ router.get('/reports/abc', requireAuth, requirePermission('reports.view'), async
   try {
     const products = await prisma.product.findMany({
       where: { deletedAt: null },
-      select: { id: true, name: true, variant: true, price: true },
-      take: 10000, // Safety limit
+      select: { id: true, name: true, variant: true, price: true, costPrice: true },
+      take: 10000,
     })
 
     // مجموع الكميات المصروفة تاريخيًا لكل منتج (النوع 'withdraw' في السجل)
@@ -82,7 +94,8 @@ router.get('/reports/abc', requireAuth, requirePermission('reports.view'), async
     const ranked = products
       .map(p => {
         const withdrawnQty = withdrawnQtyMap.get(p.id) ?? 0
-        const withdrawnValue = withdrawnQty * (p.price ?? 0)
+        const valuation = p.costPrice && p.costPrice > 0 ? p.costPrice : (p.price ?? 0)
+        const withdrawnValue = withdrawnQty * valuation
         return { id: p.id, name: p.name, variant: p.variant, withdrawnQty, withdrawnValue }
       })
       .sort((a, b) => b.withdrawnValue - a.withdrawnValue)

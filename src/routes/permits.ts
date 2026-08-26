@@ -4,6 +4,7 @@ import { AuthRequest, requireAuth, requirePermission } from "../middleware/auth"
 import { createError } from "../middleware/errorHandler";
 import { generateWithdrawalPermitNumber, generateSupplyPermitNumber } from "../utils/permitNumber";
 import { checkAndSendAlerts } from "../utils/alerts";
+import { applyPurchaseToProduct, calculateWithdrawalCost } from "../services/costService";
 
 const router = Router();
 
@@ -115,7 +116,10 @@ router.post("/withdraw", requireAuth, requirePermission("permits.withdraw"), asy
           },
         });
 
-        // Create per-product inventory log with real stock values
+        // Calculate withdrawal cost (does NOT change average cost)
+        const withdrawalCost = await calculateWithdrawalCost(tx, item.productId, actual);
+
+        // Create per-product inventory log with real stock values and cost
         await tx.inventoryLog.create({
           data: {
             type: "withdraw",
@@ -133,8 +137,15 @@ router.post("/withdraw", requireAuth, requirePermission("permits.withdraw"), asy
             userRole: req.user?.role,
             entityType: "permit",
             entityId: p.id,
-            beforeData: { stock: before },
-            afterData: { stock: after },
+            beforeData: {
+              stock: before,
+              costPrice: withdrawalCost.unitCost,
+            },
+            afterData: {
+              stock: after,
+              costPrice: withdrawalCost.unitCost,
+              withdrawalTotalCost: withdrawalCost.totalCost,
+            },
           },
         });
       }
@@ -207,7 +218,7 @@ router.post("/supply", requireAuth, requirePermission("permits.supply"), async (
           // Atomic read inside transaction for accurate before/after
           const current = await tx.product.findUnique({
             where: { id: item.productId },
-            select: { stock: true },
+            select: { stock: true, costPrice: true },
           });
           if (!current) continue;
 
@@ -225,9 +236,17 @@ router.post("/supply", requireAuth, requirePermission("permits.supply"), async (
               permitId: p.id,
               productId: item.productId,
               quantity: qty,
+              unitPrice: Number(item.unitPrice) || 0,
             },
           });
 
+          // Update Moving Average Cost if unitPrice provided
+          const itemUnitPrice = Number(item.unitPrice) || 0;
+          if (itemUnitPrice > 0) {
+            await applyPurchaseToProduct(tx, item.productId, qty, itemUnitPrice);
+          }
+
+          const updatedProduct = await tx.product.findUnique({ where: { id: item.productId }, select: { costPrice: true } });
           await tx.inventoryLog.create({
             data: {
               type: "supply",
@@ -244,8 +263,8 @@ router.post("/supply", requireAuth, requirePermission("permits.supply"), async (
               userRole: req.user?.role,
               entityType: "permit",
               entityId: p.id,
-              beforeData: { stock: before },
-              afterData: { stock: after },
+              beforeData: { stock: before, costPrice: current.costPrice ?? null },
+              afterData: { stock: after, costPrice: updatedProduct?.costPrice ?? null },
             },
           });
         }
@@ -257,6 +276,7 @@ router.post("/supply", requireAuth, requirePermission("permits.supply"), async (
           if (!np.name || !String(np.name).trim()) continue;
 
           const qty = Number(np.stock) || 0;
+          const unitPrice = Number(np.unitPrice) || 0;
 
           const product = await tx.product.create({
             data: {
@@ -271,8 +291,14 @@ router.post("/supply", requireAuth, requirePermission("permits.supply"), async (
               permitId: p.id,
               productId: product.id,
               quantity: qty,
+              unitPrice: unitPrice,
             },
           });
+
+          // Apply cost if unitPrice provided
+          if (unitPrice > 0 && qty > 0) {
+            await applyPurchaseToProduct(tx, product.id, qty, unitPrice);
+          }
 
           await tx.inventoryLog.create({
             data: {
@@ -290,8 +316,8 @@ router.post("/supply", requireAuth, requirePermission("permits.supply"), async (
               userRole: req.user?.role,
               entityType: "permit",
               entityId: p.id,
-              beforeData: { stock: 0 },
-              afterData: { stock: qty },
+              beforeData: { stock: 0, costPrice: null },
+              afterData: { stock: qty, costPrice: unitPrice > 0 ? unitPrice : null },
             },
           });
         }

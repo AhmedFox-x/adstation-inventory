@@ -28,7 +28,7 @@ router.get("/dashboard", requireAuth, requirePermission("reports.view"), async (
         where: { deletedAt: null },
         select: {
           id: true, name: true, variant: true, stock: true,
-          minStock: true, price: true, category: true,
+          minStock: true, price: true, category: true, costPrice: true,
         },
       }),
       prisma.inventoryLog.findMany({
@@ -48,14 +48,23 @@ router.get("/dashboard", requireAuth, requirePermission("reports.view"), async (
     ]);
 
     // ── KPIs ────────────────────────────────────────────────────────────────
-    const priceMap = new Map(products.map((p) => [p.id, p.price ?? 0]));
+    // Cost-based valuation: prefer costPrice, fallback to price (selling)
+    const priceMap = new Map(products.map((p) => [p.id, p.costPrice ?? p.price ?? 0]));
     const activeIds = new Set(products.map((p) => p.id));
-    const totalValue = products.reduce((s, p) => s + (p.price ?? 0) * p.stock, 0);
+    const totalValue = products.reduce((s, p) => {
+      const valuation = p.costPrice && p.costPrice > 0 ? p.costPrice : (p.price ?? 0);
+      return s + valuation * p.stock;
+    }, 0);
+    const totalCostValue = products.reduce((s, p) => {
+      return s + ((p.costPrice ?? 0) * p.stock);
+    }, 0);
     const totalItems = products.reduce((s, p) => s + p.stock, 0);
     const totalProducts = products.length;
     const lowStockCount = products.filter((p) => p.stock > 0 && p.stock < p.minStock).length;
     const outOfStockCount = products.filter((p) => p.stock === 0).length;
     const productsWithoutPrice = products.filter((p) => !p.price || p.price <= 0).length;
+    const productsWithCost = products.filter((p) => p.costPrice && p.costPrice > 0).length;
+    const productsWithoutCost = totalProducts - productsWithCost;
 
     // Operational movement: only movements on currently active products.
     const activeLogs = seriesLogs.filter((l) => activeIds.has(l.productId));
@@ -90,7 +99,8 @@ router.get("/dashboard", requireAuth, requirePermission("reports.view"), async (
     for (const p of products) {
       const key = p.category?.trim() || "غير مصنّف";
       const c = catMap.get(key) || { value: 0, count: 0, stock: 0 };
-      c.value += (p.price ?? 0) * p.stock;
+      const valuation = p.costPrice && p.costPrice > 0 ? p.costPrice : (p.price ?? 0);
+      c.value += valuation * p.stock;
       c.count++;
       c.stock += p.stock;
       catMap.set(key, c);
@@ -122,20 +132,26 @@ router.get("/dashboard", requireAuth, requirePermission("reports.view"), async (
 
     // ── topValue (stock value) ──────────────────────────────────────────────
     const topValue = products
-      .map((p) => ({
-        id: p.id, name: p.name, variant: p.variant,
-        stock: p.stock, price: p.price ?? 0, value: (p.price ?? 0) * p.stock,
-      }))
+      .map((p) => {
+        const valuation = p.costPrice && p.costPrice > 0 ? p.costPrice : (p.price ?? 0);
+        return {
+          id: p.id, name: p.name, variant: p.variant,
+          stock: p.stock, price: p.price ?? 0, costPrice: p.costPrice ?? null, value: valuation * p.stock,
+        };
+      })
       .sort((a, b) => b.value - a.value)
       .slice(0, 10);
 
     // ── lowStock alerts (top 8 by value at risk) ────────────────────────────
     const lowStockAlerts = products
       .filter((p) => p.stock > 0 && p.stock < p.minStock)
-      .map((p) => ({
-        id: p.id, name: p.name, variant: p.variant,
-        stock: p.stock, minStock: p.minStock, value: (p.price ?? 0) * p.stock,
-      }))
+      .map((p) => {
+        const valuation = p.costPrice && p.costPrice > 0 ? p.costPrice : (p.price ?? 0);
+        return {
+          id: p.id, name: p.name, variant: p.variant,
+          stock: p.stock, minStock: p.minStock, value: valuation * p.stock,
+        };
+      })
       .sort((a, b) => b.value - a.value)
       .slice(0, 8);
 
@@ -144,7 +160,8 @@ router.get("/dashboard", requireAuth, requirePermission("reports.view"), async (
     const ranked = products
       .map((p) => {
         const withdrawnQty = withdrawnQtyMap.get(p.id) ?? 0;
-        return { withdrawnValue: withdrawnQty * (p.price ?? 0) };
+        const valuation = p.costPrice && p.costPrice > 0 ? p.costPrice : (p.price ?? 0);
+        return { withdrawnValue: withdrawnQty * valuation };
       })
       .sort((a, b) => b.withdrawnValue - a.withdrawnValue);
     const abcTotal = ranked.reduce((s, r) => s + r.withdrawnValue, 0);
@@ -187,11 +204,14 @@ router.get("/dashboard", requireAuth, requirePermission("reports.view"), async (
     res.json({
       kpis: {
         totalValue,
+        totalCostValue,
         totalItems,
         totalProducts,
         lowStock: lowStockCount,
         outOfStock: outOfStockCount,
         productsWithoutPrice,
+        productsWithCost,
+        productsWithoutCost,
         todayMoves: todayLogs.length,
         todayUpQty,
         todayDownQty,

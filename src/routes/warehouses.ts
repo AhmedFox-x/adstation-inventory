@@ -203,9 +203,12 @@ router.get("/warehouses/:id", requireAuth, async (req, res) => {
 
     const stockValue = await prisma.warehouseStock.findMany({
       where: { warehouseId: warehouse.id, quantity: { gt: 0 } },
-      include: { product: { select: { price: true } } },
+      include: { product: { select: { price: true, costPrice: true } } },
     });
-    const totalValue = stockValue.reduce((sum, ws) => sum + ws.quantity * (ws.product.price || 0), 0);
+    const totalValue = stockValue.reduce((sum, ws) => {
+      const valuation = ws.product.costPrice && ws.product.costPrice > 0 ? ws.product.costPrice : (ws.product.price || 0);
+      return sum + ws.quantity * valuation;
+    }, 0);
 
     res.json({
       warehouse: {

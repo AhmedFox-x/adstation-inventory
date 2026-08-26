@@ -161,14 +161,11 @@ async function generateDeliveryNumber(tx: Tx): Promise<string> {
 }
 
 async function computeMovingAverageCost(tx: Tx, productId: string): Promise<number> {
-  const agg = await tx.purchaseOrderItem.aggregate({
-    where: { productId, order: { status: "received" } },
-    _sum: { totalPrice: true, quantity: true },
+  const product = await tx.product.findUnique({
+    where: { id: productId },
+    select: { costPrice: true },
   });
-  const totalCost = agg._sum.totalPrice ?? 0;
-  const totalQty = agg._sum.quantity ?? 0;
-  if (totalQty <= 0) return 0;
-  return round2(totalCost / totalQty);
+  return product?.costPrice ?? 0;
 }
 
 async function lockProducts(tx: Tx, productIds: string[]) {

@@ -58,7 +58,18 @@ model Product {
   category       String?
   brand          String?
   price          Float?   @default(0)
+  minSellingPrice Float?  // أقل سعر بيع مسموح به (الحد الأدنى)
   imageUrl       String?
+
+  // ── Cost tracking (Moving Average) ──
+  costPrice            Float?    // Moving Average Cost (آخر متوسط محسوب من المشتريات)
+  lastPurchasePrice    Float?    // آخر سعر شراء للوحدة
+  maxPurchasePrice     Float?    // أعلى سعر شراء سُجّل
+  minPurchasePrice     Float?    // أدنى سعر شراء سُجّل
+  lastPurchaseDate     DateTime? // تاريخ آخر شراء (PO receive)
+  totalQtyPurchased    Int       @default(0) // إجمالي الكمية الموردة (للحساب التراكمي)
+  totalCostPurchased   Float     @default(0) // إجمالي التكلفة التراكمية
+
   deletedAt      DateTime?
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
@@ -157,6 +168,7 @@ model SupplyItem {
   permitId String
   productId String
   quantity Int
+  unitPrice Float?  @default(0)
   product  Product      @relation(fields: [productId], references: [id])
   permit   SupplyPermit @relation(fields: [permitId], references: [id])
 }

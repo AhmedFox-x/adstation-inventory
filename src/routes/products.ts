@@ -4,6 +4,7 @@ import path from "path";
 import fs from "fs";
 import { prisma } from "../config/database";
 import { AuthRequest, requireAuth, requirePermission } from "../middleware/auth";
+import { calculateMargin } from "../services/costService";
 
 const router = Router();
 
@@ -108,6 +109,12 @@ router.get("/stats", requireAuth, async (_req, res, next) => {
     const totalProducts = products.length;
     const lowStock = products.filter((p) => p.stock > 0 && p.stock < p.minStock).length;
     const outOfStock = products.filter((p) => p.stock === 0).length;
+    const totalInventoryValue = products.reduce((s, p) => {
+      const valuation = p.costPrice && p.costPrice > 0 ? p.costPrice : (p.price ?? 0);
+      return s + valuation * p.stock;
+    }, 0);
+    const productsWithCost = products.filter(p => p.costPrice && p.costPrice > 0).length;
+    const productsWithoutCost = totalProducts - productsWithCost;
     const todayMoves = todayLogs.length;
     const todayUp = todayLogs.filter((l) => l.change > 0).reduce((s, l) => s + l.change, 0);
     const todayDown = todayLogs
@@ -153,6 +160,7 @@ router.get("/stats", requireAuth, async (_req, res, next) => {
 
     res.json({
       totalItems, totalProducts, lowStock, outOfStock,
+      totalInventoryValue, productsWithCost, productsWithoutCost,
       todayMoves, todayUp, todayDown, recentLogs: recentLogsWithPermit,
     });
   } catch (err) {
@@ -188,6 +196,9 @@ router.get("/products", requireAuth, async (req, res, next) => {
     const productsWithAvailable = products.map((p) => ({
       ...p,
       availableStock: p.stock - p.reservedStock,
+      margin: calculateMargin(p.price ?? 0, p.costPrice ?? null),
+      inventoryValue: p.costPrice ? Math.round(p.costPrice * p.stock * 100) / 100 : null,
+      costStatus: (p.costPrice && p.costPrice > 0) ? "established" : "unknown" as const,
     }));
 
     res.json({
@@ -205,7 +216,7 @@ router.get("/products", requireAuth, async (req, res, next) => {
 // ── POST /api/inventory/products ──────────────────────────────────────────────
 router.post("/products", requireAuth, requirePermission("products.create"), async (req, res, next) => {
   try {
-    const { name, variant, stock, minStock, sku, category, price, imageUrl } = req.body;
+    const { name, variant, stock, minStock, sku, category, price, minSellingPrice, imageUrl } = req.body;
     if (!name || !String(name).trim()) {
       res.status(400).json({ error: "Product name is required" });
       return;
@@ -220,6 +231,7 @@ router.post("/products", requireAuth, requirePermission("products.create"), asyn
         sku: sku || null,
         category: category || null,
         price: price !== undefined ? Number(price) || 0 : 0,
+        minSellingPrice: minSellingPrice !== undefined ? Number(minSellingPrice) || null : null,
         imageUrl: imageUrl || null,
       },
     });
@@ -237,7 +249,8 @@ router.post("/products", requireAuth, requirePermission("products.create"), asyn
 // ── PATCH /api/inventory/products/:id ─────────────────────────────────────────
 router.patch("/products/:id", requireAuth, requirePermission("products.edit"), async (req: AuthRequest, res, next) => {
   try {
-    const { name, variant, stock, minStock, sku, category, price, imageUrl } = req.body;
+    const { name, variant, stock, minStock, sku, category, price, minSellingPrice, imageUrl } = req.body;
+    // costPrice is intentionally excluded — it is calculated automatically by costService
     const existing = await prisma.product.findUnique({ where: { id: req.params.id } });
     if (!existing) {
       res.status(404).json({ error: "Product not found" });
@@ -259,6 +272,7 @@ router.patch("/products/:id", requireAuth, requirePermission("products.edit"), a
           ...(sku !== undefined && { sku: sku || null }),
           ...(category !== undefined && { category: category || null }),
           ...(price !== undefined && { price: Number(price) || 0 }),
+          ...(minSellingPrice !== undefined && { minSellingPrice: minSellingPrice !== null ? Number(minSellingPrice) : null }),
           ...(imageUrl !== undefined && { imageUrl: imageUrl || null }),
         },
       });
@@ -279,8 +293,8 @@ router.patch("/products/:id", requireAuth, requirePermission("products.edit"), a
             entityType: "product",
             entityId: updated.id,
             notes: "تعديل يدوي للمخزون",
-            beforeData: { stock: existing.stock, minStock: existing.minStock, price: existing.price },
-            afterData: { stock: updated.stock, minStock: updated.minStock, price: updated.price },
+            beforeData: { stock: existing.stock, minStock: existing.minStock, price: existing.price, minSellingPrice: existing.minSellingPrice ?? null, costPrice: existing.costPrice ?? null },
+            afterData: { stock: updated.stock, minStock: updated.minStock, price: updated.price, minSellingPrice: updated.minSellingPrice ?? null, costPrice: updated.costPrice ?? null },
           },
         });
       }
