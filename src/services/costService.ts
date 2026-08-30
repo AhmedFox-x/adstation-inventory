@@ -54,7 +54,13 @@ export async function applyPurchaseToProduct(
   productId: string,
   acceptedQty: number,
   unitPrice: number,
-  orderDate?: Date
+  orderDate?: Date,
+  opts?: {
+    referenceId?: string;
+    referenceType?: string;
+    userId?: string;
+    userName?: string;
+  }
 ): Promise<{ newAvgCost: number | null; isFirstPurchase: boolean }> {
   if (acceptedQty <= 0 || unitPrice <= 0) {
     return { newAvgCost: null, isFirstPurchase: false };
@@ -79,6 +85,7 @@ export async function applyPurchaseToProduct(
   const oldQty = product.totalQtyPurchased;
   const oldCost = product.totalCostPurchased;
   const isFirst = oldQty === 0;
+  const oldAvgCost = product.costPrice ?? null;
 
   const newPurchaseCost = round2(unitPrice * acceptedQty);
   const newTotalQty = oldQty + acceptedQty;
@@ -108,7 +115,83 @@ export async function applyPurchaseToProduct(
     },
   });
 
+  // Record cost history (first purchase = starting point; subsequent = purchase)
+  const change = newAvg !== null && oldAvgCost !== null ? round2(newAvg - oldAvgCost) : null;
+  await tx.costHistory.create({
+    data: {
+      productId,
+      oldCost: oldAvgCost,
+      newCost: newAvg,
+      change,
+      reason: isFirst ? "first_purchase" : "purchase",
+      purchasePrice: unitPrice,
+      referenceType: opts?.referenceType ?? "purchase_order",
+      referenceId: opts?.referenceId ?? null,
+      userId: opts?.userId ?? null,
+      userName: opts?.userName ?? null,
+    },
+  });
+
   return { newAvgCost: newAvg, isFirstPurchase: isFirst };
+}
+
+// ─── Record a manual cost adjustment in CostHistory ──────────────────────────
+/**
+ * Call this whenever a product's cost is changed outside of a purchase receipt
+ * (e.g. manual adjustment). This does NOT recalculate MAC; it just records the
+ * before/after cost for the historical cost trail.
+ */
+export async function recordCostAdjustment(
+  tx: Tx,
+  productId: string,
+  oldCost: number | null,
+  newCost: number | null,
+  reason = "adjustment",
+  opts?: {
+    referenceType?: string;
+    referenceId?: string;
+    userId?: string;
+    userName?: string;
+    createdAt?: Date;
+  }
+): Promise<void> {
+  const change =
+    newCost !== null && oldCost !== null ? round2(newCost - oldCost) : null;
+  await tx.costHistory.create({
+    data: {
+      productId,
+      oldCost,
+      newCost,
+      change,
+      reason,
+      purchasePrice: null,
+      referenceType: opts?.referenceType ?? "manual",
+      referenceId: opts?.referenceId ?? null,
+      userId: opts?.userId ?? null,
+      userName: opts?.userName ?? null,
+      ...(opts?.createdAt ? { createdAt: opts.createdAt } : {}),
+    },
+  });
+}
+
+// ─── Resolve average cost for a product at a specific date ───────────────────
+/**
+ * Returns the average cost that was in effect on the given date, based on the
+ * most recent CostHistory record with createdAt <= date.
+ * Returns null when there is NO historical cost data covering that date
+ * (never falls back to current costPrice).
+ */
+export async function getCostAtDate(
+  tx: PrismaClient | Tx,
+  productId: string,
+  date: Date
+): Promise<number | null> {
+  const latest = await tx.costHistory.findFirst({
+    where: { productId, createdAt: { lte: date } },
+    orderBy: { createdAt: "desc" },
+    select: { newCost: true },
+  });
+  return latest?.newCost ?? null;
 }
 
 // ─── Calculate withdrawal cost (does NOT change average) ─────────────────────

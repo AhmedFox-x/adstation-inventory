@@ -41,25 +41,33 @@ function formatPOMessage(
   supplierName: string,
   items: { productName: string; quantity: number; unitPrice: number }[],
   grandTotal: number,
-  expectedDelivery?: string | null
+  expectedDelivery?: string | null,
+  companyName: string = "AD Station"
 ): string {
   const lines: string[] = [];
-  lines.push(`مرحباً ${supplierName}،`);
-  lines.push(`جاري مشاركة طلب الشراء رقم: ${orderNumber}`);
+  lines.push(`مرحبًا فريق ${supplierName} 👋`);
   lines.push("");
-  lines.push("تفاصيل الطلب:");
-  items.forEach((item, idx) => {
-    lines.push(
-      `${idx + 1}. ${item.productName} — الكمية: ${item.quantity} × ${item.unitPrice.toLocaleString("ar-EG")} ج.م`
-    );
+  lines.push(`نرسل إليكم طلب الشراء رقم ${orderNumber}:`);
+  lines.push("");
+  items.forEach((item) => {
+    const itemTotal = item.quantity * item.unitPrice;
+    lines.push(`📦 ${item.productName}`);
+    lines.push(`الكمية: ${item.quantity} قطعة`);
+    if (item.unitPrice > 0) {
+      lines.push(`سعر الوحدة: ${item.unitPrice.toLocaleString("ar-EG")} ج.م`);
+      lines.push(`إجمالي المنتج: ${itemTotal.toLocaleString("ar-EG")} ج.م`);
+    }
+    lines.push("");
   });
-  lines.push("");
-  lines.push(`الإجمالي: ${grandTotal.toLocaleString("ar-EG")} ج.م`);
+  lines.push(`💰 الإجمالي: ${grandTotal.toLocaleString("ar-EG")} ج.م`);
   if (expectedDelivery) {
-    lines.push(`التسليم المتوقع: ${expectedDelivery}`);
+    lines.push(`📅 التسليم المتوقع: ${expectedDelivery}`);
   }
   lines.push("");
-  lines.push("لتأكيد الطلب أو الاستفسار، يرجى الرد على هذه الرسالة.");
+  lines.push("نرجو مراجعة الطلب وإبلاغنا بأي ملاحظات.");
+  lines.push("");
+  lines.push("مع الشكر والتقدير،");
+  lines.push(companyName);
   return lines.join("\n");
 }
 

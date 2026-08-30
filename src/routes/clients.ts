@@ -49,12 +49,13 @@ router.get("/clients/:id", requireAuth, requirePermission("clients.view"), async
     const client = await prisma.client.findUnique({
       where: { id: req.params.id },
       include: {
+        priceList: true,
         withdrawalPermits: {
           include: { items: { include: { product: { select: { id: true, name: true, barcode: true } } } } },
           orderBy: { createdAt: "desc" },
           take: 20,
         },
-        _count: { select: { withdrawalPermits: true } },
+        _count: { select: { withdrawalPermits: true, salesOrders: true } },
       },
     });
 
@@ -63,7 +64,70 @@ router.get("/clients/:id", requireAuth, requirePermission("clients.view"), async
       return;
     }
 
-    res.json(client);
+    // Customer Intelligence: aggregate analytics over ALL non-deleted sales orders.
+    const allSOs = await prisma.salesOrder.findMany({
+      where: { clientId: client.id, deletedAt: null },
+      select: { id: true, status: true, grandTotal: true, totalProfit: true, totalMarginPct: true, createdAt: true },
+    });
+    const completedStatuses = new Set(["confirmed", "processing", "shipped", "partial", "delivered", "closed", "completed"]);
+    const completed = allSOs.filter((so) => completedStatuses.has(so.status));
+    const totalRevenue = completed.reduce((s, so) => s + (so.grandTotal ?? 0), 0);
+    let profitSum = 0;
+    let profitCount = 0;
+    for (const so of completed) {
+      if (so.totalProfit !== null && so.totalProfit !== undefined) {
+        profitSum += so.totalProfit;
+        profitCount++;
+      }
+    }
+
+    // Top purchased products by quantity across SO items.
+    const soItems = await prisma.salesOrderItem.findMany({
+      where: { order: { clientId: client.id, deletedAt: null } },
+      select: { productId: true, orderedQty: true, totalPrice: true, productName: true, product: { select: { variant: true, name: true } } },
+    });
+    const prodMap = new Map<string, { name: string; variant: string | null; qty: number; value: number }>();
+    for (const it of soItems) {
+      const e = prodMap.get(it.productId) || { name: it.productName || it.product?.name || it.productId, variant: it.product?.variant ?? null, qty: 0, value: 0 };
+      e.qty += it.orderedQty;
+      e.value += it.totalPrice ?? 0;
+      prodMap.set(it.productId, e);
+    }
+    const topProducts = Array.from(prodMap.entries())
+      .map(([productId, d]) => ({ productId, ...d }))
+      .sort((a, b) => b.value - a.value)
+      .slice(0, 10);
+
+    const analytics = {
+      totalSalesOrders: allSOs.length,
+      completedSalesOrders: completed.length,
+      openSalesOrders: allSOs.length - completed.length,
+      totalRevenue: Math.round(totalRevenue * 100) / 100,
+      avgOrderValue: completed.length ? Math.round((totalRevenue / completed.length) * 100) / 100 : 0,
+      totalProfit: profitCount ? Math.round(profitSum * 100) / 100 : null,
+      avgMarginPct:
+        profitCount && completed.length
+          ? Math.round((completed.reduce((s, so) => s + (so.totalMarginPct ?? 0), 0) / profitCount) * 100) / 100
+          : null,
+      topProducts,
+    };
+
+    const [recentSalesOrders, recentReturns] = await Promise.all([
+      prisma.salesOrder.findMany({
+        where: { clientId: client.id, deletedAt: null },
+        select: { id: true, orderNumber: true, status: true, grandTotal: true, createdAt: true },
+        orderBy: { createdAt: "desc" },
+        take: 20,
+      }),
+      prisma.returnOrder.findMany({
+        where: { partyId: client.id, deletedAt: null },
+        select: { id: true, returnNumber: true, status: true, refundStatus: true, refundAmount: true, createdAt: true },
+        orderBy: { createdAt: "desc" },
+        take: 20,
+      }),
+    ]);
+
+    res.json({ ...client, analytics, recentSalesOrders, recentReturns });
   } catch (err: any) {
     console.error("[Client Detail] Error:", err?.message || err);
     if (!res.headersSent) res.status(500).json({ error: "Failed to get client" });
@@ -73,7 +137,7 @@ router.get("/clients/:id", requireAuth, requirePermission("clients.view"), async
 // ── POST /api/inventory/clients — create client ──────────────────────────────
 router.post("/clients", requireAuth, requirePermission("clients.create"), async (req: AuthRequest, res) => {
   try {
-    const { name, phone, email, address, notes } = req.body;
+    const { name, phone, email, address, notes, priceListId } = req.body;
 
     if (!name || !name.trim()) {
       res.status(400).json({ error: "Client name is required", errorAr: "اسم العميل مطلوب" });
@@ -112,6 +176,14 @@ router.post("/clients", requireAuth, requirePermission("clients.create"), async 
       return;
     }
 
+    if (priceListId) {
+      const pl = await prisma.priceList.findUnique({ where: { id: priceListId } });
+      if (!pl || !pl.isActive) {
+        res.status(400).json({ error: "Invalid priceListId" });
+        return;
+      }
+    }
+
     const client = await prisma.client.create({
       data: {
         name: name.trim(),
@@ -119,6 +191,7 @@ router.post("/clients", requireAuth, requirePermission("clients.create"), async 
         email: email?.trim() || null,
         address: address?.trim() || null,
         notes: notes?.trim() || null,
+        priceListId: priceListId || null,
       },
     });
 
@@ -132,7 +205,7 @@ router.post("/clients", requireAuth, requirePermission("clients.create"), async 
 // ── PATCH /api/inventory/clients/:id — update client ─────────────────────────
 router.patch("/clients/:id", requireAuth, requirePermission("clients.edit"), async (req: AuthRequest, res) => {
   try {
-    const { name, phone, email, address, notes, isActive } = req.body;
+    const { name, phone, email, address, notes, isActive, priceListId } = req.body;
 
     const existing = await prisma.client.findUnique({ where: { id: req.params.id } });
     if (!existing) {
@@ -176,6 +249,18 @@ router.patch("/clients/:id", requireAuth, requirePermission("clients.edit"), asy
       }
     }
 
+    if (priceListId !== undefined) {
+      if (priceListId) {
+        const pl = await prisma.priceList.findUnique({ where: { id: priceListId } });
+        if (!pl || !pl.isActive) {
+          res.status(400).json({ error: "Invalid priceListId" });
+          return;
+        }
+      } else {
+        // الفراغ = فك ارتباط القائمة
+      }
+    }
+
     const client = await prisma.client.update({
       where: { id: req.params.id },
       data: {
@@ -185,6 +270,7 @@ router.patch("/clients/:id", requireAuth, requirePermission("clients.edit"), asy
         ...(address !== undefined && { address: address?.trim() || null }),
         ...(notes !== undefined && { notes: notes?.trim() || null }),
         ...(isActive !== undefined && { isActive }),
+        ...(priceListId !== undefined && { priceListId: priceListId || null }),
       },
     });
 
@@ -204,11 +290,18 @@ router.delete("/clients/:id", requireAuth, requirePermission("clients.delete"), 
       return;
     }
 
-    const permitCount = await prisma.withdrawalPermit.count({ where: { clientId: req.params.id } });
-    if (permitCount > 0) {
+    const [permitCount, ordersCount, reservationsCount, returnsCount] = await Promise.all([
+      prisma.withdrawalPermit.count({ where: { clientId: req.params.id } }),
+      prisma.salesOrder.count({ where: { clientId: req.params.id } }),
+      prisma.reservation.count({ where: { clientId: req.params.id } }),
+      prisma.returnOrder.count({ where: { partyId: req.params.id } }),
+    ]);
+    const hasHistory = permitCount > 0 || ordersCount > 0 || reservationsCount > 0 || returnsCount > 0;
+    if (hasHistory) {
       await prisma.client.update({ where: { id: req.params.id }, data: { isActive: false } });
-      res.json({ message: "Client deactivated (has withdrawal permits)", soft: true });
+      res.json({ message: "Client deactivated (has movement history)", soft: true });
     } else {
+      // Hard delete مسموح فقط بدون أي تاريخ حركة (AGENT.md §3.4)
       await prisma.client.delete({ where: { id: req.params.id } });
       res.json({ message: "Client deleted", soft: false });
     }

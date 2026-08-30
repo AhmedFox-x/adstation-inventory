@@ -56,8 +56,8 @@ router.get("/log", requireAuth, requirePermission("logs.view"), async (req, res,
         prisma.withdrawalPermit.findMany({
           where: {
             OR: [
-              { permitNumber: { contains: search } },
-              { permitNumberOrig: { contains: search } },
+              { permitNumber: { contains: search, mode: "insensitive" } },
+              { permitNumberOrig: { contains: search, mode: "insensitive" } },
             ],
           },
           select: { id: true },
@@ -65,8 +65,8 @@ router.get("/log", requireAuth, requirePermission("logs.view"), async (req, res,
         prisma.supplyPermit.findMany({
           where: {
             OR: [
-              { permitNumber: { contains: search } },
-              { permitNumberOrig: { contains: search } },
+              { permitNumber: { contains: search, mode: "insensitive" } },
+              { permitNumberOrig: { contains: search, mode: "insensitive" } },
             ],
           },
           select: { id: true },
@@ -193,11 +193,11 @@ router.get("/log/export", requireAuth, requirePermission("reports.export"), asyn
       const productWhere = { name: { contains: search, mode: "insensitive" as const } };
       const [matchingWithdrawals, matchingSupplies] = await Promise.all([
         prisma.withdrawalPermit.findMany({
-          where: { OR: [{ permitNumber: { contains: search } }, { permitNumberOrig: { contains: search } }] },
+          where: { OR: [{ permitNumber: { contains: search, mode: "insensitive" } }, { permitNumberOrig: { contains: search, mode: "insensitive" } }] },
           select: { id: true },
         }),
         prisma.supplyPermit.findMany({
-          where: { OR: [{ permitNumber: { contains: search } }, { permitNumberOrig: { contains: search } }] },
+          where: { OR: [{ permitNumber: { contains: search, mode: "insensitive" } }, { permitNumberOrig: { contains: search, mode: "insensitive" } }] },
           select: { id: true },
         }),
       ]);

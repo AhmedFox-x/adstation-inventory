@@ -3,6 +3,7 @@ import { prisma } from "../config/database";
 import { requireAuth, requirePermission, AuthRequest } from "../middleware/auth";
 import { analyzeImageWithGemini } from "../utils/gemini";
 import { bestMatch } from "../utils/fuzzy";
+import { getDefaultWarehouseId, decrementWarehouseStock, incrementWarehouseStock } from "../utils/stockSync";
 import { scanLimiter } from "../middleware/rateLimiter";
 
 const router = Router();
@@ -141,6 +142,7 @@ router.post("/scan/confirm", scanLimiter, requireAuth, requirePermission("scan.u
       const permitNumber = `W-${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}${String(d.getDate()).padStart(2, "0")}-000`;
 
       const permit = await prisma.$transaction(async (tx) => {
+        const defaultWhId = await getDefaultWarehouseId(tx);
         const todayPrefix = permitNumber.slice(0, -3);
         const lastPermit = await tx.withdrawalPermit.findFirst({
           where: { permitNumber: { startsWith: todayPrefix } },
@@ -182,6 +184,9 @@ router.post("/scan/confirm", scanLimiter, requireAuth, requirePermission("scan.u
             where: { id: item.productId },
             data: { stock: after },
           });
+
+          // Sync WarehouseStock
+          await decrementWarehouseStock(tx, defaultWhId, item.productId, qty);
 
           await tx.withdrawalItem.create({
             data: {
@@ -227,6 +232,7 @@ router.post("/scan/confirm", scanLimiter, requireAuth, requirePermission("scan.u
       const permitNumber = `S-${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}${String(d.getDate()).padStart(2, "0")}-000`;
 
       const permit = await prisma.$transaction(async (tx) => {
+        const defaultWhId = await getDefaultWarehouseId(tx);
         const todayPrefix = permitNumber.slice(0, -3);
         const lastPermit = await tx.supplyPermit.findFirst({
           where: { permitNumber: { startsWith: todayPrefix } },
@@ -284,6 +290,9 @@ router.post("/scan/confirm", scanLimiter, requireAuth, requirePermission("scan.u
             where: { id: product.id },
             data: { stock: after },
           });
+
+          // Sync WarehouseStock
+          await incrementWarehouseStock(tx, defaultWhId, product.id, qty);
 
           await tx.supplyItem.create({
             data: {

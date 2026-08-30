@@ -25,6 +25,16 @@ import dashboardRouter from "./routes/dashboard";
 import warehousesRouter from "./routes/warehouses";
 import transfersRouter from "./routes/transfers";
 import presentationRouter from "./routes/presentation";
+import reconcileRouter from "./routes/reconcile";
+import archiveRouter from "./routes/archive";
+import companyRouter from "./routes/company";
+import productIntelligenceRouter from "./routes/product-intelligence";
+import stockIntelligenceRouter from "./routes/stock-intelligence";
+import searchRouter from "./routes/search";
+import priceListsRouter from "./routes/price-lists";
+import alertsCenterRouter from "./routes/alerts-center";
+import anomaliesRouter from "./routes/anomalies";
+import timelineRouter from "./routes/timeline";
 
 import { errorHandler } from "./middleware/errorHandler";
 import { initKeyManager } from "./utils/keyManager";
@@ -156,23 +166,24 @@ app.use("/api/inventory", dashboardRouter);
 app.use("/api/inventory", warehousesRouter);
 app.use("/api/inventory", transfersRouter);
 app.use("/api/inventory", presentationRouter);
+app.use("/api/inventory", reconcileRouter);
+app.use("/api/inventory", archiveRouter);
+app.use("/api/inventory", companyRouter);
+app.use("/api/inventory", productIntelligenceRouter);
+app.use("/api/inventory", stockIntelligenceRouter);
+app.use("/api/inventory", searchRouter);
+app.use("/api/inventory", priceListsRouter);
+app.use("/api/inventory", alertsCenterRouter);
+app.use("/api/inventory", anomaliesRouter);
+app.use("/api/inventory", timelineRouter);
 
 // ─── Key Manager Status ──────────────────────────────────────────────────────
 import { getStatus, getKeyCount } from "./utils/keyManager";
 import { requireAuth } from "./middleware/auth";
-import { runManualAlertCheck } from "./utils/alerts";
+import { getCompanyName } from "./services/companyService";
 
 app.get("/api/inventory/keys/status", requireAuth, (_req, res) => {
   res.json({ keys: getStatus(), totalKeys: getKeyCount() });
-});
-
-app.post("/api/inventory/alerts/check", requireAuth, async (_req, res) => {
-  try {
-    const result = await runManualAlertCheck(prisma);
-    res.json(result);
-  } catch (err: any) {
-    res.status(500).json({ error: "Alert check failed" });
-  }
 });
 
 // ─── Static files (Production) ───────────────────────────────────────────────
@@ -304,9 +315,11 @@ function startServer() {
     .then(() => syncProductStockToWarehouses())
     .then(() => fixProductImageUrls())
     .then(() => fixWarehouseNames())
+    .then(() => getCompanyName(prisma).then(() => {}))
     .then(() => {
-    app.listen(PORT, () => {
-      console.log(`\n📦  AD Station Inventory API running on http://localhost:${PORT}`);
+    app.listen(PORT, async () => {
+      const companyName = await getCompanyName(prisma);
+      console.log(`\n📦  ${companyName} Inventory API running on http://localhost:${PORT}`);
       console.log(`   Environment: ${process.env.NODE_ENV || "development"}\n`);
     });
 

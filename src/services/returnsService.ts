@@ -1,5 +1,6 @@
 import { Prisma, PrismaClient } from "@prisma/client";
 import { createNotification, createNotifications } from "./notificationService";
+import { getDefaultWarehouseId, decrementWarehouseStock, incrementWarehouseStock } from "../utils/stockSync";
 
 type Tx = Prisma.TransactionClient;
 
@@ -256,7 +257,7 @@ async function getSourceCapacity(
       include: { items: true, supplier: { select: { id: true, name: true } } },
     });
     if (!po) throw new ReturnError("Source PurchaseOrder not found", 404);
-    if (po.status !== "received") throw new ReturnError("Purchase order must be received", 400);
+    if (!["received", "partially_received"].includes(po.status)) throw new ReturnError("Purchase order must be received or partially received", 400);
     sourceNumber = po.orderNumber;
     partyId = po.supplierId;
     partyName = po.supplier?.name || "";
@@ -663,6 +664,7 @@ export async function receiveReturn(client: PrismaClient, id: string, input: Rec
   }
 
   return runTx(client, async (tx) => {
+    const defaultWhId = await getDefaultWarehouseId(tx);
     const ret = await tx.returnOrder.findUnique({ where: { id }, include: { items: true } });
     if (!ret || ret.deletedAt) throw new ReturnError("Return not found", 404);
 
@@ -720,6 +722,8 @@ export async function receiveReturn(client: PrismaClient, id: string, input: Rec
           where: { id: item.productId },
           data: { stock: { decrement: qty } },
         });
+        // Sync WarehouseStock
+        await decrementWarehouseStock(tx, defaultWhId, item.productId, qty);
         runningStock.set(item.productId, currentStock - qty);
       } else if (QUARANTINE_CONDITIONS.has(item.condition)) {
         note = `استلام مرتجع ${qty} وحدة من ${product.name} (حالة: تالف/فحص → حجر) — ${fresh.sourceNumber}`;
@@ -727,12 +731,16 @@ export async function receiveReturn(client: PrismaClient, id: string, input: Rec
           where: { id: item.productId },
           data: { quarantineStock: { increment: qty } },
         });
+        // Quarantine items stay physically in warehouse — sync WarehouseStock
+        await incrementWarehouseStock(tx, defaultWhId, item.productId, qty);
       } else {
         note = `استلام مرتجع ${qty} وحدة من ${product.name} من ${fresh.partyName || ""} — ${fresh.sourceNumber}`;
         await tx.product.update({
           where: { id: item.productId },
           data: { stock: { increment: qty } },
         });
+        // Sync WarehouseStock
+        await incrementWarehouseStock(tx, defaultWhId, item.productId, qty);
         runningStock.set(item.productId, currentStock + qty);
       }
 
@@ -1008,7 +1016,7 @@ export async function listReturns(
   if (filters.type && filters.type !== "all") where.type = filters.type;
   if (filters.search) {
     where.OR = [
-      { returnNumber: { contains: filters.search } },
+      { returnNumber: { contains: filters.search, mode: "insensitive" } },
       { sourceNumber: { contains: filters.search, mode: "insensitive" } },
       { partyName: { contains: filters.search, mode: "insensitive" } },
     ];
@@ -1057,9 +1065,7 @@ export async function getEligibleSourceItems(
       where: { id: opts.sourceId },
       include: { items: { include: { product: { select: { id: true, name: true, sku: true, unit: true } } } } },
     });
-    items = (order?.items || [])
-      .filter((i) => (max.get(i.productId) || 0) > 0)
-      .map((i) => ({
+    items = (order?.items || []).map((i) => ({
         productId: i.productId,
         productName: i.product?.name || i.productName || "",
         productSku: i.product?.sku || i.productSku || null,
@@ -1072,9 +1078,7 @@ export async function getEligibleSourceItems(
       where: { id: opts.sourceId },
       include: { items: { include: { product: { select: { id: true, name: true, sku: true, unit: true } } } } },
     });
-    items = (po?.items || [])
-      .filter((i) => (max.get(i.productId) || 0) > 0)
-      .map((i) => ({
+    items = (po?.items || []).map((i) => ({
         productId: i.productId,
         productName: i.product?.name || "",
         productSku: i.product?.sku || null,
@@ -1087,9 +1091,7 @@ export async function getEligibleSourceItems(
       where: { id: opts.sourceId },
       include: { items: { include: { product: { select: { id: true, name: true, sku: true, unit: true } } } } },
     });
-    items = (permit?.items || [])
-      .filter((i) => (max.get(i.productId) || 0) > 0)
-      .map((i) => ({
+    items = (permit?.items || []).map((i) => ({
         productId: i.productId,
         productName: i.product?.name || "",
         productSku: i.product?.sku || null,
@@ -1102,9 +1104,7 @@ export async function getEligibleSourceItems(
       where: { id: opts.sourceId },
       include: { items: { include: { product: { select: { id: true, name: true, sku: true, unit: true } } } } },
     });
-    items = (delivery?.items || [])
-      .filter((i) => (max.get(i.productId) || 0) > 0)
-      .map((i) => ({
+    items = (delivery?.items || []).map((i) => ({
         productId: i.productId,
         productName: i.product?.name || "",
         productSku: i.product?.sku || null,

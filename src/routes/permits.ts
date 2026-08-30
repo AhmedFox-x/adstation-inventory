@@ -5,6 +5,7 @@ import { createError } from "../middleware/errorHandler";
 import { generateWithdrawalPermitNumber, generateSupplyPermitNumber } from "../utils/permitNumber";
 import { checkAndSendAlerts } from "../utils/alerts";
 import { applyPurchaseToProduct, calculateWithdrawalCost } from "../services/costService";
+import { getDefaultWarehouseId, decrementWarehouseStock, incrementWarehouseStock } from "../utils/stockSync";
 
 const router = Router();
 
@@ -68,6 +69,7 @@ router.post("/withdraw", requireAuth, requirePermission("permits.withdraw"), asy
     // Execute withdrawal in transaction
     const permitNumber = await generateWithdrawalPermitNumber();
     const permit = await prisma.$transaction(async (tx) => {
+      const defaultWhId = await getDefaultWarehouseId(tx);
       const p = await tx.withdrawalPermit.create({
         data: {
           permitNumber,
@@ -104,6 +106,9 @@ router.post("/withdraw", requireAuth, requirePermission("permits.withdraw"), asy
           where: { id: item.productId },
           data: { stock: { decrement: actual } },
         });
+
+        // Sync WarehouseStock
+        await decrementWarehouseStock(tx, defaultWhId, item.productId, actual);
 
         // Create permit item
         await tx.withdrawalItem.create({
@@ -192,6 +197,7 @@ router.post("/supply", requireAuth, requirePermission("permits.supply"), async (
 
     const permitNumber = await generateSupplyPermitNumber();
     const permit = await prisma.$transaction(async (tx) => {
+      const defaultWhId = await getDefaultWarehouseId(tx);
       const p = await tx.supplyPermit.create({
         data: {
           permitNumber,
@@ -230,6 +236,9 @@ router.post("/supply", requireAuth, requirePermission("permits.supply"), async (
             where: { id: item.productId },
             data: { stock: { increment: qty } },
           });
+
+          // Sync WarehouseStock
+          await incrementWarehouseStock(tx, defaultWhId, item.productId, qty);
 
           await tx.supplyItem.create({
             data: {

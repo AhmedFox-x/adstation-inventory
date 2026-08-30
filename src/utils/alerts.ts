@@ -1,4 +1,5 @@
 import nodemailer from "nodemailer";
+import { getCompanyNameSync } from "../services/companyService";
 
 // ── Alert configuration from env vars ────────────────────────────────────────
 const SMTP_HOST = process.env.SMTP_HOST || "";
@@ -85,7 +86,7 @@ export async function checkAndSendAlerts(products: LowStockProduct[]): Promise<v
       يرجى مراجعة المنتجات أعلاه واتخاذ الإجراء المناسب (طلب شراء / توريد).
     </div>
     <div style="margin-top:12px;text-align:center;font-size:10px;color:#9ca3af">
-      AD Station — Inventory Management System — ${new Date().toLocaleDateString("ar-EG")}
+      ${getCompanyNameSync()} — Inventory Management System — ${new Date().toLocaleDateString("ar-EG")}
     </div>
   </div>`;
 

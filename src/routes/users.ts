@@ -2,7 +2,7 @@ import { Router } from "express";
 import bcrypt from "bcryptjs";
 import { prisma } from "../config/database";
 import { requireAuth, requirePermission, AuthRequest } from "../middleware/auth";
-import { DEFAULT_ROLES } from "../utils/permissions";
+import { DEFAULT_ROLES, PERMISSIONS } from "../utils/permissions";
 
 const router = Router();
 
@@ -135,6 +135,73 @@ router.get("/users/me", requireAuth, async (req: AuthRequest, res) => {
     });
   } catch (err: any) {
     res.status(500).json({ error: err?.message || "Failed to fetch user" });
+  }
+});
+
+// PUT /api/inventory/users/:id/password — change/reset a user's password
+// Self: verify currentPassword. Resetting another user: requires users.manage.
+router.put("/users/:id/password", requireAuth, async (req: AuthRequest, res) => {
+  try {
+    const { id } = req.params;
+    const { currentPassword, newPassword } = req.body as { currentPassword?: string; newPassword?: string };
+    const callerId = req.user?.userId;
+
+    if (!newPassword) {
+      res.status(400).json({ error: "newPassword is required" });
+      return;
+    }
+    if (newPassword.length < 6) {
+      res.status(400).json({ error: "Password must be at least 6 characters" });
+      return;
+    }
+
+    const target = await prisma.user.findUnique({
+      where: { id },
+      select: { id: true, email: true, password: true, role: true },
+    });
+    if (!target) {
+      res.status(404).json({ error: "User not found" });
+      return;
+    }
+
+    const isSelf = id === callerId;
+
+    if (!isSelf) {
+      const caller = await prisma.user.findUnique({
+        where: { id: callerId },
+        include: { roleConfig: true },
+      });
+      let callerPerms: string[] = [];
+      if (caller?.role === "owner") {
+        callerPerms = Object.values(PERMISSIONS);
+      } else if (caller?.roleConfig) {
+        try { callerPerms = JSON.parse(caller.roleConfig.permissions); } catch { callerPerms = []; }
+      }
+      if (!callerPerms.includes("users.manage")) {
+        res.status(403).json({ error: "Forbidden: users.manage permission required" });
+        return;
+      }
+    } else {
+      if (!currentPassword) {
+        res.status(400).json({ error: "currentPassword is required" });
+        return;
+      }
+      const valid = await bcrypt.compare(currentPassword, target.password);
+      if (!valid) {
+        res.status(400).json({ error: "Current password is incorrect", errorAr: "كلمة المرور الحالية غير صحيحة" });
+        return;
+      }
+    }
+
+    const hashed = await bcrypt.hash(newPassword, 10);
+    await prisma.user.update({
+      where: { id: target.id },
+      data: { password: hashed },
+    });
+
+    res.json({ message: "Password updated successfully" });
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message || "Failed to update password" });
   }
 });
 

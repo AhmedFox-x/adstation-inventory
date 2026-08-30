@@ -1,6 +1,8 @@
 ﻿node_modules/
 .env
 .env.test
+.env.qa
+.env.*
 *.db
 *.pfx
 *.pem
@@ -8,3 +10,7 @@ dist/
 public/uploads/avatars/
 public/uploads/temp/
 .playwright-mcp/
+qa-backend*.log
+qa-frontend*.log
+scripts/qa-setup.ts
+scripts/seed-shopify.ts

@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { prisma } from "../config/database";
 import { AuthRequest, requireAuth, requirePermission } from "../middleware/auth";
+import { getDefaultWarehouseId, incrementReservedStock, decrementReservedStock, decrementWarehouseStock } from "../utils/stockSync";
 
 const router = Router();
 
@@ -8,15 +9,15 @@ const router = Router();
 router.get("/reservations", requireAuth, requirePermission("reservations.view"), async (req: AuthRequest, res, next) => {
   try {
     const { search, status, page = "1", limit = "50" } = req.query as Record<string, string>;
-    const where: any = {};
+    const where: any = { deletedAt: null };
 
     if (status && status !== "all") {
       where.status = status;
     }
     if (search) {
       where.OR = [
-        { product: { name: { contains: search } } },
-        { client: { name: { contains: search } } },
+        { product: { name: { contains: search, mode: "insensitive" } } },
+        { client: { name: { contains: search, mode: "insensitive" } } },
       ];
     }
 
@@ -59,7 +60,7 @@ router.get("/reservations/:id", requireAuth, requirePermission("reservations.vie
         client: { select: { id: true, name: true } },
       },
     });
-    if (!reservation) {
+    if (!reservation || reservation.deletedAt) {
       res.status(404).json({ error: "Reservation not found" });
       return;
     }
@@ -96,11 +97,17 @@ router.post("/reservations", requireAuth, requirePermission("reservations.create
     }
 
     const reservation = await prisma.$transaction(async (tx) => {
+      let resolvedWarehouseId = warehouseId;
+      if (!resolvedWarehouseId) {
+        const defaultWh = await tx.warehouse.findFirst({ where: { isActive: true }, orderBy: { createdAt: "asc" } });
+        resolvedWarehouseId = defaultWh?.id;
+      }
+      if (!resolvedWarehouseId) throw new Error("No active warehouse found. Provide a valid warehouseId.");
       const r = await tx.reservation.create({
         data: {
           productId,
           clientId: clientId || null,
-          warehouseId: warehouseId || "default",
+          warehouseId: resolvedWarehouseId,
           quantity,
           notes: notes || null,
           expiresAt: expiresAt ? new Date(expiresAt) : null,
@@ -116,6 +123,9 @@ router.post("/reservations", requireAuth, requirePermission("reservations.create
         where: { id: productId },
         data: { reservedStock: { increment: quantity } },
       });
+
+      // Sync WarehouseStock reservedQuantity
+      await incrementReservedStock(tx, resolvedWarehouseId, productId, quantity);
 
       return r;
     });
@@ -155,6 +165,9 @@ router.patch("/reservations/:id/cancel", requireAuth, requirePermission("reserva
         where: { id: existing.productId },
         data: { reservedStock: { decrement: existing.quantity } },
       });
+
+      // Sync WarehouseStock reservedQuantity
+      await decrementReservedStock(tx, existing.warehouseId, existing.productId, existing.quantity);
 
       return r;
     });
@@ -215,6 +228,10 @@ router.patch("/reservations/:id/fulfill", requireAuth, requirePermission("reserv
           reservedStock: { decrement: existing.quantity },
         },
       });
+
+      // Sync WarehouseStock
+      await decrementWarehouseStock(tx, existing.warehouseId, existing.productId, existing.quantity);
+      await decrementReservedStock(tx, existing.warehouseId, existing.productId, existing.quantity);
 
       await tx.inventoryLog.create({
         data: {

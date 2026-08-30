@@ -53,6 +53,9 @@ model Product {
   reservedStock  Int      @default(0)
   quarantineStock Int    @default(0)
   minStock       Int      @default(5)
+  reorderPoint   Int      @default(0)   // نقطة إعادة الطلب
+  maxStock       Int      @default(0)   // الحد الأقصى (0 = بدون حد)
+  safetyStock    Int      @default(0)   // المخزون الآمن
   sku            String?  @unique
   barcode        String?  @unique
   category       String?
@@ -84,6 +87,28 @@ model Product {
   returnItems      ReturnOrderItem[]
   warehouseStocks  WarehouseStock[]
   transferItems    TransferItem[]
+  costHistory      CostHistory[]
+  priceListItems   PriceListItem[]
+}
+
+model CostHistory {
+  id            String   @id @default(cuid())
+  productId     String
+  oldCost       Float?
+  newCost       Float?
+  change        Float?
+  reason        String // 'first_purchase' | 'purchase' | 'adjustment'
+  purchasePrice Float?
+  referenceType String?
+  referenceId   String?
+  userId        String?
+  userName      String?
+  createdAt     DateTime @default(now())
+
+  product Product @relation(fields: [productId], references: [id])
+
+  @@index([productId, createdAt])
+  @@index([referenceType, referenceId])
 }
 
 model Reservation {
@@ -98,6 +123,8 @@ model Reservation {
   notes            String?
   expiresAt        DateTime?
   createdBy        String
+  deletedAt        DateTime?
+  deletedBy        String?
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
@@ -127,6 +154,8 @@ model WithdrawalPermit {
   orderDate         String?
   deliveryDate      String?
   permitNumberOrig  String?
+  deletedAt         DateTime?
+  deletedBy         String?
   createdAt         DateTime @default(now())
 
   items  WithdrawalItem[]
@@ -157,6 +186,8 @@ model SupplyPermit {
   orderDate         String?
   deliveryDate      String?
   permitNumberOrig  String?
+  deletedAt         DateTime?
+  deletedBy         String?
   createdAt         DateTime @default(now())
 
   items    SupplyItem[]
@@ -214,6 +245,8 @@ model StocktakeSession {
   userName    String?
   date        DateTime @default(now())
   notes       String?
+  deletedAt   DateTime?
+  deletedBy   String?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
@@ -262,12 +295,55 @@ model Client {
   address       String?
   notes         String?
   isActive      Boolean  @default(true)
+  priceListId   String?  @unique
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
+  priceList         PriceList?         @relation("ClientAssignedList", fields: [priceListId], references: [id])
+  customerList      PriceList?         @relation("CustomerPriceList")
   withdrawalPermits WithdrawalPermit[]
   reservations      Reservation[]
   salesOrders       SalesOrder[]
+
+  @@index([priceListId])
+}
+
+model PriceList {
+  id        String   @id @default(cuid())
+  name      String
+  tier      String   @default("retail") // retail | wholesale | corporate | vip | customer
+  currency  String   @default("EGP")
+  isDefault Boolean  @default(false)
+  isActive  Boolean  @default(true)
+  clientId  String?  @unique // customer-specific list (tier=customer)
+  notes     String?
+  createdBy String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  items          PriceListItem[]
+  client         Client? @relation("CustomerPriceList", fields: [clientId], references: [id])
+  assignedClient Client? @relation("ClientAssignedList")
+
+  @@index([tier])
+  @@index([isActive])
+}
+
+model PriceListItem {
+  id          String   @id @default(cuid())
+  priceListId String
+  productId   String
+  price       Float
+  minPrice    Float?
+  updatedBy   String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  priceList PriceList @relation(fields: [priceListId], references: [id], onDelete: Cascade)
+  product   Product   @relation(fields: [productId], references: [id])
+
+  @@unique([priceListId, productId])
+  @@index([productId])
 }
 
 model PurchaseOrder {
@@ -294,6 +370,8 @@ model PurchaseOrder {
   sentChannel          String?
   sentRecipient        String?
   sentMessageId        String?
+  deletedAt           DateTime?
+  deletedBy           String?
   createdAt            DateTime @default(now())
   updatedAt            DateTime @updatedAt
 
@@ -351,6 +429,8 @@ model SalesOrder {
   shipping             Float?   @default(0)
   taxAmount            Float?   @default(0)
   grandTotal           Float?   @default(0)
+  totalProfit          Float?
+  totalMarginPct       Float?
   currency             String   @default("EGP")
   notes                String?
   createdBy            String?
@@ -380,7 +460,11 @@ model SalesOrderItem {
   deliveredQty Int     @default(0)
   costPrice    Float?  @default(0)
   sellingPrice Float?  @default(0)
+  listPrice    Float?  // سعر الـ Price List اللي اشتق منه سعر البيع (لو موجود)
+  listTier     String? // مصدر الـ Price List (retail/wholesale/corporate/vip/customer)
   totalPrice   Float?  @default(0)
+  grossProfit  Float?
+  marginPct    Float?
   discount     Float?  @default(0)
   tax          Float?  @default(0)
   taxRate      Float?  @default(0)
@@ -481,6 +565,7 @@ model Notification {
   id              String    @id @default(cuid())
   userId          String?
   type            String
+  category        String?   // stock | reorder | pricing | returns | orders | quarantine | anomalies
   title           String
   message         String
   entityType      String?
@@ -488,15 +573,50 @@ model Notification {
   referenceType   String?
   referenceId     String?
   priority        String    @default("normal")
+  severity        String    @default("normal") // low | normal | high | critical
   icon            String?
   actionUrl       String?
+  sourceKey       String?   @unique // مفتاح منع التكرار في الـ sweep (type:entityId)
   createdBySystem Boolean   @default(false)
   isRead          Boolean   @default(false)
   readAt          DateTime?
+  resolvedAt      DateTime?
+  resolvedBy      String?
+  snoozedUntil    DateTime?
   deletedAt       DateTime?
   createdAt       DateTime  @default(now())
 
   @@index([userId, isRead, createdAt])
+  @@index([category, createdAt])
+  @@index([severity])
+}
+
+model Anomaly {
+  id            String    @id @default(cuid())
+  code          String    // قاعده الكشف: cost_price_spike | sudden_stock_drop | dead_stock | receive_mismatch | unexpected_change | large_adjustment | negative_stock
+  severity      String    @default("medium") // low | medium | high | critical
+  title         String
+  description   String
+  entityType    String?
+  entityName    String?
+  entityId      String?
+  referenceType String?
+  referenceId   String?
+  details       Json?
+  sourceLogId   String?
+  status        String    @default("open") // open | reviewing | resolved
+  timesSeen     Int       @default(1)
+  resolutionNote String?
+  resolvedBy    String?
+  resolvedAt    DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([status])
+  @@index([code, status])
+  @@index([entityId])
+  @@index([createdAt])
+  @@index([code, entityType, entityId, status])
 }
 
 model ReturnOrder {
@@ -654,6 +774,8 @@ model Transfer {
   receivedBy      String?
   receivedByName  String?
   receivedAt      DateTime?
+  deletedAt       DateTime?
+  deletedBy       String?
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 

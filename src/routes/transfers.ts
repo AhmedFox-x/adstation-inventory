@@ -37,7 +37,7 @@ function canTransition(from: string, to: string): boolean {
 router.get("/transfers", requireAuth, requirePermission("transfers.view"), async (req, res) => {
   try {
     const { status, page = "1", limit = "20", search } = req.query as Record<string, string>;
-    const where: any = {};
+    const where: any = { deletedAt: null };
     if (status && status !== "all") where.status = status;
     if (search) {
       where.OR = [
@@ -96,7 +96,7 @@ router.get("/transfers/:id", requireAuth, requirePermission("transfers.view"), a
         },
       },
     });
-    if (!transfer) { res.status(404).json({ error: "Transfer not found" }); return; }
+    if (!transfer || transfer.deletedAt) { res.status(404).json({ error: "Transfer not found" }); return; }
 
     const fromStock = await prisma.warehouseStock.aggregate({
       where: { warehouseId: transfer.fromWarehouseId },

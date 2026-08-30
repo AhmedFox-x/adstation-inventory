@@ -4,7 +4,8 @@ import path from "path";
 import fs from "fs";
 import { prisma } from "../config/database";
 import { AuthRequest, requireAuth, requirePermission } from "../middleware/auth";
-import { calculateMargin } from "../services/costService";
+import { calculateMargin, recordCostAdjustment } from "../services/costService";
+import { getDefaultWarehouseId, setWarehouseStock } from "../utils/stockSync";
 
 const router = Router();
 
@@ -176,9 +177,9 @@ router.get("/products", requireAuth, async (req, res, next) => {
 
     if (search) {
       where.OR = [
-        { name: { contains: search } },
-        { variant: { contains: search } },
-        { sku: { contains: search } },
+        { name: { contains: search, mode: "insensitive" } },
+        { variant: { contains: search, mode: "insensitive" } },
+        { sku: { contains: search, mode: "insensitive" } },
       ];
     }
     if (category) {
@@ -262,6 +263,7 @@ router.patch("/products/:id", requireAuth, requirePermission("products.edit"), a
     }
 
     const product = await prisma.$transaction(async (tx) => {
+      const defaultWhId = await getDefaultWarehouseId(tx);
       const updated = await tx.product.update({
         where: { id: req.params.id },
         data: {
@@ -279,6 +281,8 @@ router.patch("/products/:id", requireAuth, requirePermission("products.edit"), a
 
       // Audit trail: manual stock adjustment must leave a trace (same transaction as the change)
       if (stock !== undefined && Number(stock) !== existing.stock) {
+        // Sync WarehouseStock to absolute value
+        await setWarehouseStock(tx, defaultWhId, updated.id, Number(stock));
         const user = req.user;
         await tx.inventoryLog.create({
           data: {
@@ -308,6 +312,221 @@ router.patch("/products/:id", requireAuth, requirePermission("products.edit"), a
       res.status(409).json({ error: "A product with this SKU already exists" });
       return;
     }
+    next(err);
+  }
+});
+
+// ── GET /api/inventory/products/:id/cost-history ─────────────────────────────
+router.get("/products/:id/cost-history", requireAuth, requirePermission("products.view"), async (req: AuthRequest, res, next) => {
+  try {
+    const existing = await prisma.product.findUnique({ where: { id: req.params.id } });
+    if (!existing) {
+      res.status(404).json({ error: "Product not found" });
+      return;
+    }
+
+    const history = await prisma.costHistory.findMany({
+      where: { productId: req.params.id },
+      orderBy: { createdAt: "desc" },
+      take: 100,
+      select: {
+        id: true,
+        oldCost: true,
+        newCost: true,
+        change: true,
+        reason: true,
+        purchasePrice: true,
+        referenceType: true,
+        referenceId: true,
+        userId: true,
+        userName: true,
+        createdAt: true,
+      },
+    });
+
+    res.json({ history });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ── POST /api/inventory/products/:id/cost ─────────────────────────────────────
+// Set an opening/adjustment cost with a documented source (e.g. Stylish catalog).
+// Separation of concerns: this is a high-stakes operation (changes inventory
+// valuation) so it requires the dedicated `products.setCost` permission.
+router.post("/products/:id/cost", requireAuth, requirePermission("products.setCost"), async (req: AuthRequest, res, next) => {
+  try {
+    const { costPrice, sourceUrl, fetchedAt } = req.body as {
+      costPrice?: unknown;
+      sourceUrl?: unknown;
+      fetchedAt?: unknown;
+    };
+
+    const price = Number(costPrice);
+    if (!Number.isFinite(price) || price <= 0) {
+      res.status(400).json({ error: "costPrice must be a positive number", errorAr: "التكلفة لازم تكون رقم موجب" });
+      return;
+    }
+    if (typeof sourceUrl !== "string" || !/^https?:\/\/.+/i.test(sourceUrl.trim()) || sourceUrl.trim().length > 500) {
+      res.status(400).json({ error: "sourceUrl must be a valid http(s) URL", errorAr: "رابط المصدر غير صالح" });
+      return;
+    }
+    let fetched: Date | undefined;
+    if (fetchedAt !== undefined && fetchedAt !== null) {
+      const d = new Date(String(fetchedAt));
+      if (Number.isNaN(d.getTime())) {
+        res.status(400).json({ error: "fetchedAt is not a valid date", errorAr: "تاريخ الحصول غير صالح" });
+        return;
+      }
+      fetched = d;
+    }
+
+    const existing = await prisma.product.findUnique({ where: { id: req.params.id } });
+    if (!existing) {
+      res.status(404).json({ error: "Product not found" });
+      return;
+    }
+    if (existing.deletedAt) {
+      res.status(403).json({ error: "Archived products cannot have cost updated" });
+      return;
+    }
+
+    const user = req.user;
+    const product = await prisma.$transaction(async (tx) => {
+      const before = existing.costPrice;
+      await recordCostAdjustment(
+        tx,
+        existing.id,
+        before,
+        price,
+        before === null || before === undefined || before <= 0 ? "first_purchase" : "adjustment",
+        {
+          referenceType: "stylish",
+          referenceId: sourceUrl.trim(),
+          userId: user?.userId,
+          userName: user?.name,
+          createdAt: fetched,
+        }
+      );
+      const updated = await tx.product.update({
+        where: { id: existing.id },
+        data: { costPrice: price },
+      });
+      return updated;
+    });
+
+    res.json({ product, message: "Cost saved with documented source" });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ── POST /api/inventory/products/bulk-cost-sku ────────────────────────────────
+// Bulk load of documented costs (+ optional SKU rename) in a single request.
+// Each item is applied in its own transaction: CostHistory (stylish source) +
+// product.costPrice + product.sku. Idempotent: items whose costPrice and sku
+// already match are skipped (no duplicate history rows).
+router.post("/products/bulk-cost-sku", requireAuth, requirePermission("products.setCost"), async (req: AuthRequest, res, next) => {
+  try {
+    const items = Array.isArray((req.body as { items?: unknown }).items) ? (req.body as { items: unknown[] }).items : null;
+    if (!items || items.length === 0) {
+      res.status(400).json({ error: "items must be a non-empty array", errorAr: "القائمة فاضية" });
+      return;
+    }
+    if (items.length > 2000) {
+      res.status(400).json({ error: "too many items (max 2000)", errorAr: "عدد المنتجات كبير جدًا" });
+      return;
+    }
+
+    const user = req.user;
+    // Pre-fetch all products once.
+    const ids = items.map((it: any) => String(it?.id ?? ""));
+    const existing = await prisma.product.findMany({ where: { id: { in: ids } } });
+    const byId = new Map(existing.map((p) => [p.id, p]));
+
+    // Pre-fetch all skus to detect duplicates (excluding same product).
+    const skuMapByProduct = new Map<string, string>();
+    const skuOwners = new Map<string, string>();
+    for (const p of existing) {
+      if (p.sku) {
+        const k = p.sku.toLowerCase();
+        const owner = skuOwners.get(k);
+        if (owner === undefined || owner === p.id) skuOwners.set(k, p.id);
+        else skuOwners.set(k, "__dup__");
+      }
+    }
+
+    const applied: { id: string; cost?: boolean; sku?: boolean }[] = [];
+    const skipped: string[] = [];
+    const failures: { id: string; name?: string; error: string }[] = [];
+
+    for (const it of items as any[]) {
+      const id = String(it?.id ?? "");
+      const rec = it ?? {};
+      const price = Number(rec.costPrice);
+      const rawUrl = typeof rec.sourceUrl === "string" ? rec.sourceUrl.trim() : "";
+      const rawSku = typeof rec.sku === "string" ? rec.sku.trim() : null;
+      let fetched: Date | undefined;
+
+      const prod = byId.get(id);
+      if (!prod) { failures.push({ id, error: "not found" }); continue; }
+      if (prod.deletedAt) { failures.push({ id, name: prod.name, error: "archived" }); continue; }
+      if (!Number.isFinite(price) || price <= 0) { failures.push({ id, name: prod.name, error: "invalid costPrice" }); continue; }
+      if (!/^https?:\/\/.+/i.test(rawUrl) || rawUrl.length > 500) { failures.push({ id, name: prod.name, error: "invalid sourceUrl" }); continue; }
+      if (rec.fetchedAt !== undefined && rec.fetchedAt !== null) {
+        const d = new Date(String(rec.fetchedAt));
+        if (Number.isNaN(d.getTime())) { failures.push({ id, name: prod.name, error: "invalid fetchedAt" }); continue; }
+        fetched = d;
+      }
+      let skuTarget: string | null = null;
+      if (rawSku) {
+        if (rawSku.length > 64) { failures.push({ id, name: prod.name, error: "sku too long" }); continue; }
+        const k = rawSku.toLowerCase();
+        const owner = skuOwners.get(k);
+        if (owner !== undefined && owner !== prod.id && owner !== "__dup__" && owner !== id) {
+          failures.push({ id, name: prod.name, error: `sku "${rawSku}" already used by product ${owner}` });
+          continue;
+        }
+        skuTarget = rawSku;
+      }
+
+      const costChanged = prod.costPrice !== price;
+      const skuChanged = skuTarget !== null && prod.sku !== skuTarget;
+      if (!costChanged && !skuChanged) { skipped.push(id); continue; }
+
+      const entry: { id: string; cost?: boolean; sku?: boolean } = { id };
+      try {
+        await prisma.$transaction(async (tx) => {
+          if (costChanged) {
+            await recordCostAdjustment(
+              tx,
+              prod.id,
+              prod.costPrice,
+              price,
+              prod.costPrice === null || prod.costPrice === undefined || prod.costPrice <= 0 ? "first_purchase" : "adjustment",
+              { referenceType: "stylish", referenceId: rawUrl, userId: user?.userId, userName: user?.name, createdAt: fetched }
+            );
+            await tx.product.update({ where: { id: prod.id }, data: { costPrice: price } });
+            entry.cost = true;
+          }
+          if (skuChanged) {
+            await tx.product.update({ where: { id: prod.id }, data: { sku: skuTarget } });
+            entry.sku = true;
+          }
+        });
+        applied.push(entry);
+        // update in-memory maps
+        if (skuChanged) {
+          skuOwners.set(skuTarget!.toLowerCase(), prod.id);
+          skuMapByProduct.set(prod.id, skuTarget!);
+        }
+      } catch (e: any) {
+        failures.push({ id, name: prod.name, error: e?.message?.slice(0, 160) || "unknown" });
+      }
+    }
+
+    res.json({ applied: applied.length, skipped: skipped.length, failures: failures.length, failureDetails: failures.slice(0, 100) });
+  } catch (err) {
     next(err);
   }
 });

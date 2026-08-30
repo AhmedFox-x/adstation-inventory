@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { prisma } from "../config/database";
 import { requireAuth, requirePermission } from "../middleware/auth";
+import { getDefaultWarehouseId, setWarehouseStock } from "../utils/stockSync";
 
 const router = Router();
 
@@ -8,7 +9,7 @@ const router = Router();
 router.get("/stocktake/sessions", requireAuth, async (req, res, next) => {
   try {
     const { status, page = "1", limit = "20" } = req.query as Record<string, string>;
-    const where: any = {};
+    const where: any = { deletedAt: null };
     if (status) where.status = status;
 
     const [sessions, total] = await Promise.all([
@@ -49,7 +50,7 @@ router.get("/stocktake/sessions/:id", requireAuth, async (req, res, next) => {
       where: { id: req.params.id },
       include: { items: true },
     });
-    if (!session) { res.status(404).json({ error: "Session not found" }); return; }
+    if (!session || session.deletedAt) { res.status(404).json({ error: "Session not found" }); return; }
     res.json({ session });
   } catch (e) { next(e); }
 });
@@ -145,6 +146,7 @@ router.post("/stocktake/sessions/:id/approve", requireAuth, requirePermission("s
 
     // Execute all stock updates + logs in a single transaction for data integrity
     const result = await prisma.$transaction(async (tx) => {
+      const defaultWhId = await getDefaultWarehouseId(tx);
       let updated = 0;
       let totalIncrease = 0;
       let totalDecrease = 0;
@@ -164,6 +166,9 @@ router.post("/stocktake/sessions/:id/approve", requireAuth, requirePermission("s
           where: { id: item.productId },
           data: { stock: newStock },
         });
+
+        // Sync WarehouseStock to absolute value
+        await setWarehouseStock(tx, defaultWhId, item.productId, newStock);
 
         const log = await tx.inventoryLog.create({
           data: {
@@ -215,11 +220,68 @@ router.post("/stocktake/sessions/:id/approve", requireAuth, requirePermission("s
   } catch (e) { next(e); }
 });
 
-// ── DELETE /api/inventory/stocktake/sessions/:id ────────────────────────────
-router.delete("/stocktake/sessions/:id", requireAuth, requirePermission("stocktake.approve"), async (req, res, next) => {
+// ── DELETE /api/inventory/stocktake/sessions/:id (soft delete) ─────────────
+router.delete("/stocktake/sessions/:id", requireAuth, requirePermission("stocktake.create"), async (req: any, res, next) => {
   try {
-    await prisma.stocktakeSession.delete({ where: { id: req.params.id } });
+    await prisma.stocktakeSession.update({
+      where: { id: req.params.id },
+      data: { deletedAt: new Date(), deletedBy: req.user?.email || "system" },
+    });
     res.json({ success: true });
+  } catch (e) { next(e); }
+});
+
+// ── POST /api/inventory/stocktake/auto ────────────────────────────────────────
+router.post("/stocktake/auto", requireAuth, requirePermission("stocktake.create"), async (req: any, res, next) => {
+  try {
+    const { name, notes } = req.body;
+    const products = await prisma.product.findMany({
+      where: { deletedAt: null },
+      orderBy: { name: "asc" },
+    });
+
+    if (products.length === 0) { res.status(400).json({ error: "No active products to stocktake" }); return; }
+
+    const sessionName = name || `جرد تلقائي — ${new Date().toLocaleDateString("ar-EG")}`;
+
+    const session = await prisma.stocktakeSession.create({
+      data: {
+        name: sessionName,
+        status: "completed",
+        userId: req.user?.userId || "",
+        userName: req.user?.name || req.user?.email || "",
+        notes: notes || "جرد تلقائي — تم تأكيد كل الكميات الحالية",
+        items: {
+          create: products.map((p) => ({
+            productId: p.id,
+            productName: p.name,
+            productSku: p.sku || null,
+            productVariant: p.variant || null,
+            category: p.category || null,
+            systemStock: p.stock,
+            actualCount: p.stock,
+            note: null,
+            exclusionReason: null,
+            flaggedRecount: false,
+          })),
+        },
+      },
+      include: { _count: { select: { items: true } } },
+    });
+
+    res.json({
+      session: {
+        id: session.id,
+        name: session.name,
+        status: session.status,
+        itemCount: session._count.items,
+        createdAt: session.createdAt,
+      },
+      summary: {
+        totalProducts: products.length,
+        message: "تم إنشاء جرد تلقائي وتأكيد كل الكميات الحالية",
+      },
+    });
   } catch (e) { next(e); }
 });
 

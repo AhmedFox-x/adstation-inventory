@@ -63,7 +63,97 @@ router.get("/suppliers/:id", requireAuth, requirePermission("suppliers.view"), a
       return;
     }
 
-    res.json(supplier);
+    // Supplier Intelligence: aggregated analytics over ALL non-deleted purchase orders.
+    const allPOs = await prisma.purchaseOrder.findMany({
+      where: { supplierId: supplier.id, deletedAt: null },
+      select: { id: true, status: true, grandTotal: true, orderDate: true, expectedDeliveryDate: true, actualDeliveryDate: true, createdAt: true },
+    });
+
+    const receivedStatuses = new Set(["received", "approved", "confirmed", "closed", "completed"]);
+    const closedPOs = allPOs.filter((po) => receivedStatuses.has(po.status));
+    const totalSpend = closedPOs.reduce((s, po) => s + (po.grandTotal ?? 0), 0);
+
+    // On-time delivery rate + average lead time (days between orderDate and expectedDeliveryDate).
+    let onTime = 0;
+    let leadSum = 0;
+    let leadCount = 0;
+    for (const po of allPOs) {
+      if (po.expectedDeliveryDate && po.actualDeliveryDate) {
+        if (po.actualDeliveryDate <= po.expectedDeliveryDate) onTime++;
+      }
+      if (po.orderDate && po.expectedDeliveryDate) {
+        leadSum += Math.max(0, (po.expectedDeliveryDate.getTime() - po.orderDate.getTime()) / 86400000);
+        leadCount++;
+      }
+    }
+
+    // Most purchased products across all PO items.
+    const poItems = await prisma.purchaseOrderItem.findMany({
+      where: { order: { supplierId: supplier.id, deletedAt: null } },
+      select: { productId: true, quantity: true, unitPrice: true, product: { select: { name: true, variant: true, barcode: true } } },
+    });
+    const prodMap = new Map<string, { name: string; variant: string | null; qty: number; value: number }>();
+    for (const it of poItems) {
+      const e = prodMap.get(it.productId) || { name: it.product.name, variant: it.product.variant, qty: 0, value: 0 };
+      e.qty += it.quantity;
+      e.value += (it.quantity || 0) * (it.unitPrice || 0);
+      prodMap.set(it.productId, e);
+    }
+    const topProducts = Array.from(prodMap.entries())
+      .map(([productId, d]) => ({ productId, ...d }))
+      .sort((a, b) => b.value - a.value)
+      .slice(0, 10);
+
+    const analytics = {
+      totalPurchaseOrders: allPOs.length,
+      closedPurchaseOrders: closedPOs.length,
+      openPurchaseOrders: allPOs.length - closedPOs.length,
+      totalSpend: Math.round(totalSpend * 100) / 100,
+      avgOrderValue: closedPOs.length ? Math.round((totalSpend / closedPOs.length) * 100) / 100 : 0,
+      onTimeDeliveryRate: onTime > 0 ? Math.round((onTime / Math.max(1, allPOs.filter((p) => p.actualDeliveryDate).length)) * 100) / 100 : null,
+      avgLeadTimeDays: leadCount ? Math.round((leadSum / leadCount) * 10) / 10 : null,
+      topProducts,
+      costHistoryCount: await prisma.costHistory.count({ where: { referenceType: "purchase_order", referenceId: { in: allPOs.map((p) => p.id) } } }),
+    };
+
+    // Supplier Intelligence: آخر أسعار شراء لكل منتج (Price History) — من أحدث عنصر PO لكل منتج.
+    const recentItems = await prisma.purchaseOrderItem.findMany({
+      where: { order: { supplierId: supplier.id, deletedAt: null } },
+      select: { productId: true, unitPrice: true, orderId: true },
+      orderBy: { order: { createdAt: "desc" } },
+      take: 500,
+    });
+    const poDates = new Map(allPOs.map((p) => [p.id, p.createdAt]));
+    const priceHistoryMap = new Map<string, { productId: string; unitPrice: number; orderId: string; orderedAt: string }>();
+    for (const it of recentItems) {
+      if (!priceHistoryMap.has(it.productId) && it.unitPrice && it.unitPrice > 0) {
+        priceHistoryMap.set(it.productId, { productId: it.productId, unitPrice: it.unitPrice, orderId: it.orderId, orderedAt: poDates.get(it.orderId)?.toISOString() ?? "" });
+      }
+    }
+    const priceHistory = await Promise.all(
+      Array.from(priceHistoryMap.values()).map(async (ph) => {
+        const p = await prisma.product.findUnique({ where: { id: ph.productId }, select: { name: true, sku: true, variant: true } });
+        return { ...ph, name: p?.name || "", sku: p?.sku || null, variant: p?.variant || null };
+      })
+    );
+
+    const recentSupplyPermits = await prisma.supplyPermit.findMany({
+      where: { supplierId: supplier.id, deletedAt: null },
+      orderBy: { createdAt: "desc" },
+      take: 20,
+      include: { _count: { select: { items: true } } },
+    });
+
+    const recentPurchaseOrders = (
+      await prisma.purchaseOrder.findMany({
+        where: { supplierId: supplier.id, deletedAt: null },
+        select: { id: true, orderNumber: true, status: true, grandTotal: true, createdAt: true, expectedDeliveryDate: true },
+        orderBy: { createdAt: "desc" },
+        take: 20,
+      })
+    ).map((o) => ({ ...o, poNumber: o.orderNumber }));
+
+    res.json({ ...supplier, analytics, priceHistory, recentSupplyPermits, recentPurchaseOrders });
   } catch (err: any) {
     console.error("[Supplier Detail] Error:", err?.message || err);
     if (!res.headersSent) res.status(500).json({ error: "Failed to get supplier" });

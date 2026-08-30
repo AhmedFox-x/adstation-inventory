@@ -26,8 +26,11 @@
 | `products.create` | ✅ | ✅ | — |
 | `products.edit` | ✅ | ✅ | — |
 | `products.delete` | ✅ | ✅ | — |
+| `products.setCost` | ✅ | — | — |
 | `products.import` | ✅ | — | — |
 | `products.export` | ✅ | — | — |
+
+> **`products.setCost`** (مُضافة 2026-08-29): تغيير التكلفة مع مصدر موثّق يغيّر تقييم المخزون — Owner فقط، وقرار أمني تطبيقًا لقاعدة "العمليات عالية الخطورة = صلاحيات منفصلة". ممنوع إعطاؤها لـ manager/viewer.
 
 > ملاحظة تاريخية: `products.import`/`products.export` كانتا في دور manager قبل تحديث 2026-08-02، لكن **لا تُعتمدان** (كانتا محفوظتين في snapshot محلي خارج الـ repo). قرار مالك المشروع: DB = SoT والوضع الحالي (48/41/5) يبقى كما هو.
 
@@ -136,12 +139,43 @@
 
 > **`approve`/`reject`/`refund` = Owner فقط** — اعتماد المرتجع، وإقفاله النهائي، وتسجيل الردّ المالي عمليات إدارية عليا (AGENT.md §2.2)، تمامًا كـ `sales_orders.approve/reject`. أُضيفت في P5 مع الـ Seed للأدوار النظامية في نفس المهمة، واختبارات Positive (Owner 200) + Negative (Manager/Viewer 403) لكل transition حساس.
 
-## ملخص الأعداد (prod 2026-08-06)
+### قوائم الأسعار `price_lists.*` (Sprint 2 — Batch 1)
+| الصلاحية | Owner | Manager | Viewer | الغرض |
+|----------|:-----:|:-------:|:------:|:------|
+| `price_lists.view` | ✅ | ✅ | ✅ | عرض القوائم وحلّ السعر تلقائيًا |
+| `price_lists.manage` | ✅ | ✅ | — | إنشاء/تعديل قائمة وأسعار عناصرها |
+| `price_lists.override` | ✅ | ✅ | — | تعديل سعر يدوي في أمر بيع مخالفاً لقائمة العميل |
+
+> **قرار أمني (2026-08-29):** `price_lists.override` اتضافت لـ **Manager** عمدًا — التفاوض على أسعار يومية جزء من عمله التشغيلي، والانحراف عن القائمة بيظهر كـ خصم على الـ item (List Price/Actual/Discount). إعطاؤها لأسعار قريبة من/تحت الـ discount ممكن في Alerts Center. **Owner** يقدر يسحبها من دور Manager في أي وقت من صفحة الأدوار — الملف ده هو المرجع اللي بيسجّل التغيير.
+
+### مركز التنبيهات `alerts.*` (Sprint 2 — Batch 1)
+| الصلاحية | Owner | Manager | Viewer | الغرض |
+|----------|:-----:|:-------:|:------:|:------|
+| `alerts.view` | ✅ | ✅ | ✅ | فتح مركز التنبيهات والفلترة |
+| `alerts.manage` | ✅ | ✅ | — | تشغيل الـ sweep، تحديد مقروء/محلول، snooze |
+
+### الكشف عن الحالات الشاذة `anomalies.*` (Sprint 2 — Batch 1)
+| الصلاحية | Owner | Manager | Viewer | الغرض |
+|----------|:-----:|:-------:|:------:|:------|
+| `anomalies.view` | ✅ | ✅ | ✅ | عرض الحالات الشاذة وتفاصيلها |
+| `anomalies.run` | ✅ | ✅ | — | تشغيل قواعد الكشف السبع يدويًا |
+| `anomalies.resolve` | ✅ | — | — | اعتماد قرار الحالة الشاذة (open→resolved) |
+
+> **`anomalies.resolve` = Owner فقط** — تطبيقًا لقاعدة AGENT.md §2.2: الاعتماد النهائي على خلل (قرار مالي/تشغيلي) يتقيّد بأعلى الدور. Manager يقدر يشغّل الكشف ويشوف، لكن ما يحلش شذوذًا نهائيًا.
+
+### الخط الزمني الموحّد `timeline.*` (Sprint 2 — Batch 1)
+| الصلاحية | Owner | Manager | Viewer | الغرض |
+|----------|:-----:|:-------:|:------:|:------|
+| `timeline.view` | ✅ | ✅ | ✅ | جلب سجل الأحداث الموحّد لأي كيان |
+
+> ملاحظة: `timeline.view` بيعتمد على `logs.view` وREADME للقراءة؛ مطلوب لأنه endpoint تجميعي جديد (تغيير Additive مش Breaking).
+
+## ملخص الأعداد (بعد Batch 1 — Sprint 2)
 
 | الدور | عدد الصلاحيات |
 |-------|:------------:|
-| owner | 50 |
-| manager | 41 |
-| viewer | 5 |
+| owner | 60 |
+| manager | 49 |
+| viewer | 9 |
 
-> أُضيفت صلاحيتا `sales_orders.approve` + `sales_orders.reject` في P4 → owner 48→50 (لأن owner = `ALL_PERMISSIONS`)، manager بقي 41 (approve/reject مش مدرجتين فيه). بعد تطبيق الـ upsert التالي على prod: owner=50، manager=41.
+> أُضيفت 10 صلاحيات جديدة في Batch 1: `price_lists.view/manage/override` + `alerts.view/manage` + `anomalies.view/run/resolve` + `timeline.view`. Owner = `ALL_PERMISSIONS` (تلقائي). Manager زاد بـ 8 (كلها ما عدا `anomalies.resolve`). Viewer زاد بـ 4 (view بس). بعد تطبيق الـ upsert على prod: owner=60, manager=49, viewer=9.

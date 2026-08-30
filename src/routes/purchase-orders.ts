@@ -3,6 +3,7 @@ import { prisma } from "../config/database";
 import { requireAuth, requirePermission, AuthRequest } from "../middleware/auth";
 import { validatePhone, formatPOMessage, getWhatsAppProvider } from "../services/whatsappService";
 import { applyPurchaseToProduct } from "../services/costService";
+import { getDefaultWarehouseId, incrementWarehouseStock } from "../utils/stockSync";
 
 const router = Router();
 
@@ -66,7 +67,7 @@ router.get("/purchase-orders", requireAuth, requirePermission("purchase_orders.v
     const { status, supplierId, search, page = "1", limit = "50" } = req.query;
     const skip = (Number(page) - 1) * Number(limit);
 
-    const where: any = {};
+    const where: any = { deletedAt: null };
     if (status && typeof status === "string" && status !== "all") where.status = status;
     if (supplierId && typeof supplierId === "string") where.supplierId = supplierId;
     if (search && typeof search === "string") {
@@ -109,7 +110,7 @@ router.get("/purchase-orders/:id", requireAuth, requirePermission("purchase_orde
         statusHistory: { orderBy: { createdAt: "asc" } },
       },
     });
-    if (!order) { res.status(404).json({ error: "Purchase order not found" }); return; }
+    if (!order || order.deletedAt) { res.status(404).json({ error: "Purchase order not found" }); return; }
     res.json(order);
   } catch (err: any) {
     console.error("[PO Detail]", err?.message || err);
@@ -267,12 +268,14 @@ router.post("/purchase-orders/:id/send", requireAuth, requirePermission("purchas
     if (!existing.supplier.phone) { res.status(400).json({ error: "Supplier has no phone number. Please add a phone number to the supplier before sending." }); return; }
     if (!validatePhone(existing.supplier.phone)) { res.status(400).json({ error: "Supplier phone number is invalid. Please update the supplier phone." }); return; }
 
+    const companyName = (await prisma.systemSettings.findUnique({ where: { key: "company_name" } }))?.value || "AD Station";
     const message = formatPOMessage(
       existing.orderNumber,
       existing.supplier.name,
       existing.items.map((it) => ({ productName: it.product.name, quantity: it.quantity, unitPrice: it.unitPrice || 0 })),
       existing.grandTotal || 0,
-      existing.expectedDeliveryDate?.toISOString()
+      existing.expectedDeliveryDate?.toISOString(),
+      companyName
     );
 
     const provider = getWhatsAppProvider();
@@ -405,7 +408,17 @@ router.post("/purchase-orders/:id/receive", requireAuth, requirePermission("purc
 
     if (updates.length === 0) { res.status(400).json({ error: "No valid items to receive" }); return; }
 
+    const priceVariances: Array<{
+      productId: string;
+      productName: string;
+      poUnitPrice: number;
+      previousCost: number | null;
+      variance: number | null;
+      variancePct: number | null;
+    }> = [];
+
     await prisma.$transaction(async (tx) => {
+      const defaultWhId = await getDefaultWarehouseId(tx);
       for (const u of updates) {
         // Read current stock BEFORE increment for accurate inventory log
         const stockBefore = await tx.product.findUnique({ where: { id: u.productId }, select: { stock: true, name: true, costPrice: true } });
@@ -417,14 +430,72 @@ router.post("/purchase-orders/:id/receive", requireAuth, requirePermission("purc
             data: { stock: { increment: u.acceptedQty } },
           });
 
+          // Sync WarehouseStock
+          await incrementWarehouseStock(tx, defaultWhId, u.productId, u.acceptedQty);
+
           // Update Moving Average Cost from PO item unit price
           const poItem = order.items.find(i => i.id === u.itemId);
           if (poItem && poItem.unitPrice && poItem.unitPrice > 0) {
+            const prevCost = stockBefore?.costPrice ?? null;
             await applyPurchaseToProduct(
               tx, u.productId, u.acceptedQty, poItem.unitPrice,
-              order.actualDeliveryDate || new Date()
+              order.actualDeliveryDate || new Date(),
+              { referenceId: order.id, referenceType: "purchase_order", userId: req.user?.userId, userName: req.user?.name }
             );
+
+            // Price variance vs previous average cost (null-safe)
+            if (prevCost !== null && prevCost > 0) {
+              const variance = poItem.unitPrice - prevCost;
+              const variancePct = (variance / prevCost) * 100;
+              priceVariances.push({
+                productId: u.productId,
+                productName: stockBefore?.name || "",
+                poUnitPrice: poItem.unitPrice,
+                previousCost: prevCost,
+                variance: Math.round(variance * 100) / 100,
+                variancePct: Math.round(variancePct * 100) / 100,
+              });
+
+              // Persist a durable, append-only price-variance audit record (see AGENTS.md 2.1).
+              await tx.inventoryLog.create({
+                data: {
+                  type: "price_variance",
+                  productId: u.productId,
+                  oldStock,
+                  newStock: oldStock + u.acceptedQty,
+                  change: u.acceptedQty,
+                  notes: `Price variance: PO unit ${poItem.unitPrice} vs prev avg cost ${prevCost} (${Math.round(variancePct * 100) / 100}%)`,
+                  userId: req.user?.userId,
+                  userName: req.user?.name,
+                  userRole: req.user?.role,
+                  referenceType: "purchase_order",
+                  referenceId: order.id,
+                  entityType: "product",
+                  entityId: u.productId,
+                  beforeData: { previousCost: prevCost, poUnitPrice: poItem.unitPrice },
+                  afterData: { variance: Math.round(variance * 100) / 100, variancePct: Math.round(variancePct * 100) / 100 },
+                },
+              });
+            } else {
+              priceVariances.push({
+                productId: u.productId,
+                productName: stockBefore?.name || "",
+                poUnitPrice: poItem.unitPrice,
+                previousCost: null,
+                variance: null,
+                variancePct: null,
+              });
+            }
           }
+        }
+
+        // Rejected items go to quarantine
+        const rejectedQty = u.receivedQty - u.acceptedQty;
+        if (rejectedQty > 0) {
+          await tx.product.update({
+            where: { id: u.productId },
+            data: { quarantineStock: { increment: rejectedQty } },
+          });
         }
 
         await tx.purchaseOrderItem.update({
@@ -460,6 +531,30 @@ router.post("/purchase-orders/:id/receive", requireAuth, requirePermission("purc
             },
           });
         }
+
+        // Log rejected items going to quarantine
+        if (rejectedQty > 0) {
+          const productBefore = await tx.product.findUnique({ where: { id: u.productId }, select: { quarantineStock: true } });
+          await tx.inventoryLog.create({
+            data: {
+              productId: u.productId,
+              type: "quarantine_in",
+              change: 0,
+              oldStock: oldStock,
+              newStock: oldStock,
+              notes: `رفض ${rejectedQty} وحدة من أمر الشراء ${order.orderNumber} — ${stockBefore?.name || ""}`,
+              referenceType: "purchase_order",
+              referenceId: order.id,
+              userId: req.user?.userId,
+              userName: req.user?.name,
+              userRole: req.user?.role,
+              entityType: "purchase_order",
+              entityId: order.id,
+              beforeData: { quarantineStock: (productBefore?.quarantineStock ?? 0) - rejectedQty },
+              afterData: { quarantineStock: productBefore?.quarantineStock ?? 0 },
+            },
+          });
+        }
       }
 
       const updatedItems = await tx.purchaseOrderItem.findMany({ where: { orderId: order.id } });
@@ -492,7 +587,7 @@ router.post("/purchase-orders/:id/receive", requireAuth, requirePermission("purc
       },
     });
 
-    res.json({ order: updatedOrder, message: "Items received and stock updated" });
+    res.json({ order: updatedOrder, message: "Items received and stock updated", priceVariances });
   } catch (err: any) {
     console.error("[PO Receive]", err?.message || err);
     if (!res.headersSent) res.status(500).json({ error: "Failed to receive items" });

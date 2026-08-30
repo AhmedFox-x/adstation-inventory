@@ -1,6 +1,7 @@
 import { Prisma, PrismaClient } from "@prisma/client";
 import { getReturnedQtyBySource } from "./returnsService";
 import { createNotification, createNotifications } from "./notificationService";
+import { getDefaultWarehouseId, decrementWarehouseStock, decrementReservedStock, incrementReservedStock } from "../utils/stockSync";
 
 type Tx = Prisma.TransactionClient;
 
@@ -21,6 +22,8 @@ export interface OrderItemInput {
   sellingPrice: number;
   discount?: number;
   tax?: number;
+  listPrice?: number;
+  listTier?: string;
 }
 
 export interface CreateOrderInput {
@@ -297,6 +300,8 @@ export async function createOrder(client: PrismaClient, input: CreateOrderInput,
               orderedQty: Number(it.orderedQty),
               deliveredQty: 0,
               sellingPrice: Number(it.sellingPrice),
+              listPrice: it.listPrice ?? null,
+              listTier: it.listTier ?? null,
               costPrice: 0,
               discountRate: r.discountRate,
               taxRate: r.taxRate,
@@ -388,6 +393,8 @@ export async function updateOrder(client: PrismaClient, id: string, input: Updat
               orderedQty: Number(it.orderedQty),
               deliveredQty: 0,
               sellingPrice: Number(it.sellingPrice),
+              listPrice: it.listPrice ?? null,
+              listTier: it.listTier ?? null,
               costPrice: 0,
               discountRate: r.discountRate,
               taxRate: r.taxRate,
@@ -454,6 +461,17 @@ async function executeConfirmedTransition(
     }
   }
 
+  const defaultWarehouse = await tx.warehouse.findFirst({ where: { isActive: true }, orderBy: { createdAt: "asc" } });
+  const reservationWarehouseId = defaultWarehouse?.id;
+  if (!reservationWarehouseId) throw new SalesOrderError("No active warehouse found for reservation", 400);
+
+  // ── Profitability accumulation ─────────────────────────────────────────
+  // Per project decision: if ANY item has missing/invalid cost, order-level
+  // profitability is marked incomplete (null), never a fabricated 0.
+  let orderProfitTotal = 0
+  let orderRevenueTotal = 0
+  let orderProfitIncomplete = false
+
   for (const item of fresh.items) {
     const product = productMap.get(item.productId)!;
     const costPrice = await computeMovingAverageCost(tx, item.productId);
@@ -461,9 +479,27 @@ async function executeConfirmedTransition(
       where: { id: item.productId },
       data: { reservedStock: { increment: item.orderedQty } },
     });
+    // Sync WarehouseStock reservedQuantity
+    await incrementReservedStock(tx, reservationWarehouseId, item.productId, item.orderedQty);
+
+    // Cost valid? → compute grossProfit + margin per item; else mark incomplete
+    const sellingPrice = item.sellingPrice ?? 0
+    const qty = item.orderedQty || 0
+    let grossProfit: number | null = null
+    let marginPct: number | null = null
+    if (costPrice !== null && costPrice > 0) {
+      grossProfit = costPrice > 0 ? Math.round((sellingPrice - costPrice) * qty * 100) / 100 : null
+      marginPct = costPrice > 0 ? Math.round((((sellingPrice - costPrice) / costPrice) * 100) * 100) / 100 : null
+    } else {
+      orderProfitIncomplete = true
+    }
+    if (grossProfit !== null) orderProfitTotal += grossProfit
+    else orderProfitIncomplete = true
+    orderRevenueTotal += sellingPrice * qty
+
     await tx.salesOrderItem.update({
       where: { id: item.id },
-      data: { costPrice },
+      data: { costPrice, grossProfit, marginPct },
     });
     await tx.inventoryLog.create({
       data: {
@@ -491,7 +527,7 @@ async function executeConfirmedTransition(
         productId: item.productId,
         clientId: fresh.clientId,
         salesOrderItemId: item.id,
-        warehouseId: (item as any).warehouseId || "default",
+        warehouseId: reservationWarehouseId,
         quantity: item.orderedQty,
         fulfilledQty: 0,
         status: "active",
@@ -505,6 +541,10 @@ async function executeConfirmedTransition(
   const updateData: Prisma.SalesOrderUpdateInput = {
     status: "confirmed",
     version: { increment: 1 },
+    totalProfit: orderProfitIncomplete ? null : Math.round(orderProfitTotal * 100) / 100,
+    totalMarginPct: (orderProfitIncomplete || orderRevenueTotal === 0)
+      ? null
+      : Math.round((orderProfitTotal / orderRevenueTotal) * 100 * 100) / 100,
   };
   if (approvalId) {
     updateData.approvals = {
@@ -778,6 +818,7 @@ export async function deliverOrder(client: PrismaClient, id: string, input: Deli
       throw new SalesOrderError(`Cannot deliver order in status ${fresh.status}`, 400);
     }
 
+    const defaultWhId = await getDefaultWarehouseId(tx);
     const products = await tx.product.findMany({ where: { id: { in: productIds } } });
     const productMap = new Map(products.map((p) => [p.id, p]));
 
@@ -821,6 +862,9 @@ export async function deliverOrder(client: PrismaClient, id: string, input: Deli
           reservedStock: { decrement: qty },
         },
       });
+      // Sync WarehouseStock
+      await decrementWarehouseStock(tx, defaultWhId, item.productId, qty);
+      await decrementReservedStock(tx, defaultWhId, item.productId, qty);
       await tx.salesDeliveryItem.create({
         data: {
           deliveryId: delivery.id,
@@ -940,6 +984,7 @@ export async function deliverOrder(client: PrismaClient, id: string, input: Deli
 
 export async function cancelOrder(client: PrismaClient, id: string, user: ServiceUser, meta: RequestMeta = {}, note?: string) {
   return runTx(client, async (tx) => {
+    const defaultWhId = await getDefaultWarehouseId(tx);
     const order = await tx.salesOrder.findUnique({ where: { id }, include: { items: true, client: true } });
     if (!order || order.deletedAt) throw new SalesOrderError("Sales order not found", 404);
 
@@ -987,6 +1032,8 @@ export async function cancelOrder(client: PrismaClient, id: string, user: Servic
 
     for (const [productId, qty] of releases) {
       await tx.product.update({ where: { id: productId }, data: { reservedStock: { decrement: qty } } });
+      // Sync WarehouseStock
+      await decrementReservedStock(tx, defaultWhId, productId, qty);
       const product = productMap.get(productId);
       await tx.inventoryLog.create({
         data: {
@@ -1060,6 +1107,7 @@ export async function expireSalesOrders(client: PrismaClient): Promise<number> {
 
   for (const order of expired) {
     await runTx(client, async (tx) => {
+      const defaultWhId = await getDefaultWarehouseId(tx);
       const releases = new Map<string, number>();
       if (order.status === "confirmed") {
         for (const item of order.items) {
@@ -1076,6 +1124,8 @@ export async function expireSalesOrders(client: PrismaClient): Promise<number> {
 
       for (const [productId, qty] of releases) {
         await tx.product.update({ where: { id: productId }, data: { reservedStock: { decrement: qty } } });
+        // Sync WarehouseStock
+        await decrementReservedStock(tx, defaultWhId, productId, qty);
         const product = await tx.product.findUnique({ where: { id: productId } });
         await tx.inventoryLog.create({
           data: {
@@ -1162,7 +1212,7 @@ export async function listOrders(
   if (filters.clientId) where.clientId = filters.clientId;
   if (filters.search) {
     where.OR = [
-      { orderNumber: { contains: filters.search } },
+      { orderNumber: { contains: filters.search, mode: "insensitive" } },
       { client: { name: { contains: filters.search, mode: "insensitive" } } },
       { reference: { contains: filters.search, mode: "insensitive" } },
     ];

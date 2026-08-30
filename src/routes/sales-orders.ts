@@ -1,7 +1,10 @@
 import { Router } from "express";
 import { prisma } from "../config/database";
 import { AuthRequest, requireAuth, requirePermission } from "../middleware/auth";
+import { createError } from "../middleware/errorHandler";
 import { PERMISSIONS } from "../utils/permissions";
+import { resolveClientPrice, hasPriceListPermission } from "../services/priceListService";
+import { recordStockInsufficient } from "../services/anomalyService";
 import {
   createOrder,
   updateOrder,
@@ -27,6 +30,55 @@ function metaOf(req: AuthRequest) {
     ip: req.ip,
     userAgent: req.get("user-agent"),
   };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// سياسة أسعار الـ Price List على أوامر البيع:
+//  - لو العميل ليه قائمة سعر (خاصة/محددة/افتراضية) والمنتج متسعّر فيها →
+//    بيتم حفظ listPrice/listTier على الـ item (List/Actual/Discount في الواجهة).
+//  - أي انحراف عن سعر القائمة = "تعديل يدوي" ≈ محتاج صلاحية price_lists.override.
+//  - من غير قائمة سعر → السلوك القديم يفضل زيه (السعر اللي ادخله المستخدم).
+// ─────────────────────────────────────────────────────────────────────────────
+async function applyPricePolicy(req: AuthRequest, body: any): Promise<any> {
+  if (!body || !Array.isArray(body.items) || !body.clientId) return body;
+  const perms = req.user?.permissions || [];
+  const items = [...body.items];
+
+  for (const it of items) {
+    const resolved = await resolveClientPrice(prisma, body.clientId, it.productId);
+    if (resolved.listPrice === null) continue; // من غير قائمة → سلوك قديم
+
+    it.listPrice = resolved.listPrice;
+    it.listTier = resolved.tier;
+
+    const selling = Number(it.sellingPrice) || 0;
+    if (selling > 0 && Math.abs(selling - resolved.listPrice) > 0.001) {
+      if (!hasPriceListPermission(perms, PERMISSIONS.PRICE_LISTS_OVERRIDE)) {
+        throw createError(
+          `Manual price override requires the price_lists.override permission (list price ${resolved.listPrice})`,
+          403
+        );
+      }
+    }
+  }
+
+  return { ...body, items };
+}
+
+async function logInsufficientStockAnomaly(err: any, ctx: { orderId?: string; clientId?: string; actor?: string }) {
+  if (err && err.status === 409 && typeof err.message === "string" && /Insufficient stock/i.test(err.message)) {
+    try {
+      await recordStockInsufficient(prisma, {
+        productIds: [],
+        message: typeof err.message === "string" ? err.message : "Insufficient stock",
+        actor: ctx.actor,
+        entityType: "sales_order",
+        entityId: ctx.orderId || `client_${ctx.clientId || "unknown"}`,
+      });
+    } catch (e) {
+      console.warn("[sales-orders] anomaly record for insufficient stock failed:", (e as Error).message);
+    }
+  }
 }
 
 // GET /sales-orders — قائمة مع فلترة
@@ -65,9 +117,11 @@ router.get("/sales-orders/:id", requireAuth, requirePermission(PERMISSIONS.SALES
 // POST /sales-orders — إنشاء مسودة
 router.post("/sales-orders", requireAuth, requirePermission(PERMISSIONS.SALES_ORDERS_CREATE), async (req: AuthRequest, res, next) => {
   try {
-    const order = await createOrder(prisma, req.body, metaOf(req));
+    const body = await applyPricePolicy(req, req.body);
+    const order = await createOrder(prisma, body, metaOf(req));
     res.status(201).json(order);
   } catch (err) {
+    await logInsufficientStockAnomaly(err, { clientId: req.body?.clientId, actor: req.user?.userId });
     next(err);
   }
 });
@@ -75,9 +129,11 @@ router.post("/sales-orders", requireAuth, requirePermission(PERMISSIONS.SALES_OR
 // PUT /sales-orders/:id — تعديل مسودة
 router.put("/sales-orders/:id", requireAuth, requirePermission(PERMISSIONS.SALES_ORDERS_EDIT_DRAFT), async (req: AuthRequest, res, next) => {
   try {
-    const order = await updateOrder(prisma, req.params.id, req.body, metaOf(req));
+    const body = await applyPricePolicy(req, req.body);
+    const order = await updateOrder(prisma, req.params.id, body, metaOf(req));
     res.json(order);
   } catch (err) {
+    await logInsufficientStockAnomaly(err, { orderId: req.params.id, clientId: req.body?.clientId, actor: req.user?.userId });
     next(err);
   }
 });
@@ -88,6 +144,7 @@ router.post("/sales-orders/:id/confirm", requireAuth, requirePermission(PERMISSI
     const order = await confirmOrder(prisma, req.params.id, metaOf(req));
     res.json(order);
   } catch (err) {
+    await logInsufficientStockAnomaly(err, { orderId: req.params.id, actor: req.user?.userId });
     next(err);
   }
 });
