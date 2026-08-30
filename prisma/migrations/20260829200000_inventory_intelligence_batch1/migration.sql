@@ -1,5 +1,5 @@
-﻿-- AlterTable
-ALTER TABLE "Product" ALTER COLUMN "unit" SET DEFAULT '┘é╪╖╪╣╪⌐';
+-- AlterTable
+ALTER TABLE "Product" ALTER COLUMN "unit" SET DEFAULT 'قطعة';
 
 -- AlterTable
 ALTER TABLE "Client" ADD COLUMN     "priceListId" TEXT;
@@ -128,4 +128,3 @@ ALTER TABLE "PriceListItem" ADD CONSTRAINT "PriceListItem_priceListId_fkey" FORE
 
 -- AddForeignKey
 ALTER TABLE "PriceListItem" ADD CONSTRAINT "PriceListItem_productId_fkey" FOREIGN KEY ("productId") REFERENCES "Product"("id") ON DELETE RESTRICT ON UPDATE CASCADE;
-

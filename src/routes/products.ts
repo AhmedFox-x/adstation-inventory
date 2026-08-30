@@ -250,7 +250,7 @@ router.post("/products", requireAuth, requirePermission("products.create"), asyn
 // ── PATCH /api/inventory/products/:id ─────────────────────────────────────────
 router.patch("/products/:id", requireAuth, requirePermission("products.edit"), async (req: AuthRequest, res, next) => {
   try {
-    const { name, variant, stock, minStock, sku, category, price, minSellingPrice, imageUrl } = req.body;
+    const { name, variant, stock, minStock, reorderPoint, maxStock, safetyStock, sku, category, price, minSellingPrice, imageUrl } = req.body;
     // costPrice is intentionally excluded — it is calculated automatically by costService
     const existing = await prisma.product.findUnique({ where: { id: req.params.id } });
     if (!existing) {
@@ -271,6 +271,9 @@ router.patch("/products/:id", requireAuth, requirePermission("products.edit"), a
           ...(variant !== undefined && { variant: variant || null }),
           ...(stock !== undefined && { stock: Number(stock) }),
           ...(minStock !== undefined && { minStock: Number(minStock) }),
+          ...(reorderPoint !== undefined && { reorderPoint: Number(reorderPoint) }),
+          ...(maxStock !== undefined && { maxStock: Number(maxStock) }),
+          ...(safetyStock !== undefined && { safetyStock: Number(safetyStock) }),
           ...(sku !== undefined && { sku: sku || null }),
           ...(category !== undefined && { category: category || null }),
           ...(price !== undefined && { price: Number(price) || 0 }),

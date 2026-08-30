@@ -28,8 +28,11 @@ router.get("/price-lists/resolve", requireAuth, requirePermission(PERMISSIONS.PR
       return;
     }
     res.json({
-      product: { id: product.id, name: product.name, basePrice: product.price ?? 0, minSellingPrice: product.minSellingPrice ?? null },
-      priceList: resolved,
+      resolved: {
+        ...resolved,
+        basePrice: product.price ?? 0,
+        productName: product.name,
+      },
     });
   } catch (err) {
     next(err);
@@ -47,7 +50,7 @@ router.get("/price-lists", requireAuth, requirePermission(PERMISSIONS.PRICE_LIST
         assignedClient: { select: { id: true, name: true } },
       },
     });
-    res.json({ priceLists: lists.map((l: any) => ({
+    res.json({ lists: lists.map((l: any) => ({
       ...l,
       appliedTo: l.tier === "customer" ? l.client?.name ?? null : l.assignedClient?.name ?? null,
     })) });
@@ -72,7 +75,7 @@ router.get("/price-lists/:id/items", requireAuth, requirePermission(PERMISSIONS.
       res.status(404).json({ error: "Price list not found" });
       return;
     }
-    res.json({ list, items });
+    res.json({ items, total: items.length, list });
   } catch (err) {
     next(err);
   }
@@ -128,7 +131,7 @@ router.post("/price-lists", requireAuth, requirePermission(PERMISSIONS.PRICE_LIS
         },
       });
     });
-    res.status(201).json({ priceList: created });
+    res.status(201).json({ list: created });
   } catch (err) {
     next(err);
   }
@@ -161,7 +164,7 @@ router.patch("/price-lists/:id", requireAuth, requirePermission(PERMISSIONS.PRIC
       }
       return tx.priceList.update({ where: { id: existing.id }, data });
     });
-    res.json({ priceList: updated });
+    res.json({ list: updated });
   } catch (err) {
     next(err);
   }
@@ -179,7 +182,7 @@ router.delete("/price-lists/:id", requireAuth, requirePermission(PERMISSIONS.PRI
       await tx.client.updateMany({ where: { priceListId: existing.id }, data: { priceListId: null } });
       await tx.priceList.update({ where: { id: existing.id }, data: { isActive: false } });
     });
-    res.json({ message: "Price list deactivated", soft: true });
+    res.json({ list: existing, message: "Price list deactivated", soft: true });
   } catch (err) {
     next(err);
   }
@@ -226,7 +229,7 @@ router.put("/price-lists/:id/items", requireAuth, requirePermission(PERMISSIONS.
       }
       return out;
     });
-    res.json({ message: `Upserted ${results.length} items`, items: results });
+    res.json({ updated: results.length, list, items: results });
   } catch (err) {
     next(err);
   }
