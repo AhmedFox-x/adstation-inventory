@@ -68,6 +68,8 @@ router.post("/withdraw", requireAuth, requirePermission("permits.withdraw"), asy
 
     // Execute withdrawal in transaction
     const permitNumber = await generateWithdrawalPermitNumber();
+    // Track which products actually had stock withdrawn (for low-stock alerts)
+    const withdrawnProductIds: string[] = [];
     const permit = await prisma.$transaction(async (tx) => {
       const defaultWhId = await getDefaultWarehouseId(tx);
       const p = await tx.withdrawalPermit.create({
@@ -90,6 +92,9 @@ router.post("/withdraw", requireAuth, requirePermission("permits.withdraw"), asy
         const prodAvailable = product.stock - (product.reservedStock ?? 0);
         const actual = Math.min(requested, Math.max(0, prodAvailable));
         if (actual <= 0) continue;
+
+        // Track for low-stock alerts after transaction
+        withdrawnProductIds.push(item.productId);
 
         // Atomic read inside transaction for accurate before/after
         const current = await tx.product.findUnique({
@@ -173,10 +178,9 @@ router.post("/withdraw", requireAuth, requirePermission("permits.withdraw"), asy
     });
 
     // Fire-and-forget: check for low stock alerts (non-blocking)
-    const affectedProductIds = items.filter((it: any) => it.actual > 0).map((it: any) => it.productId);
-    if (affectedProductIds.length > 0) {
+    if (withdrawnProductIds.length > 0) {
       prisma.product.findMany({
-        where: { id: { in: affectedProductIds }, deletedAt: null },
+        where: { id: { in: withdrawnProductIds }, deletedAt: null },
         select: { id: true, name: true, stock: true, minStock: true, category: true },
       }).then(checkAndSendAlerts).catch(() => {});
     }

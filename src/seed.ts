@@ -22,6 +22,25 @@ async function ensureApprovalThreshold(prisma: PrismaClient) {
   const defaults = [
     { key: "approvalThresholdValue", value: "5000" },
     { key: "approvalThresholdCurrency", value: "EGP" },
+    { key: "feature.withdraw", value: "true" },
+    { key: "feature.supply", value: "true" },
+    { key: "feature.aiScan", value: "true" },
+    { key: "feature.barcodeScan", value: "true" },
+    { key: "feature.showroom", value: "true" },
+    { key: "feature.catalogStudio", value: "true" },
+    { key: "feature.reservations", value: "true" },
+    { key: "feature.reorderCenter", value: "true" },
+    { key: "feature.returns", value: "true" },
+    { key: "feature.packDispatch", value: "true" },
+    { key: "feature.uom", value: "true" },
+    { key: "feature.cycleCount", value: "true" },
+    { key: "feature.bundles", value: "true" },
+    { key: "feature.serialBatch", value: "true" },
+    { key: "feature.priceLists", value: "true" },
+    { key: "feature.alerts", value: "true" },
+    { key: "feature.anomalies", value: "true" },
+    { key: "feature.importExport", value: "true" },
+    { key: "feature.qrPrint", value: "true" },
   ];
   for (const d of defaults) {
     const existing = await prisma.systemSettings.findUnique({ where: { key: d.key } });

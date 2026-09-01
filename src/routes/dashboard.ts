@@ -174,32 +174,51 @@ router.get("/dashboard", requireAuth, requirePermission("reports.view"), async (
       abc[cls]++;
     }
 
-    // ── recentLogs (last 10 with permit number) ─────────────────────────────
-    const recentLogsWithPermit = await Promise.all(
-      recentLogs.map(async (l) => {
-        let permitNumber: string | null = null;
-        if (l.referenceType === "withdrawal" && l.referenceId) {
-          const w = await prisma.withdrawalPermit.findUnique({
-            where: { id: l.referenceId },
-            select: { permitNumber: true, permitNumberOrig: true },
-          });
-          permitNumber = w?.permitNumberOrig || w?.permitNumber || null;
-        } else if (l.referenceType === "supply" && l.referenceId) {
-          const s = await prisma.supplyPermit.findUnique({
-            where: { id: l.referenceId },
-            select: { permitNumber: true, permitNumberOrig: true },
-          });
-          permitNumber = s?.permitNumberOrig || s?.permitNumber || null;
-        }
-        return {
-          id: l.id, type: l.type, permitNumber, productId: l.productId,
-          productName: l.product.name, oldStock: l.oldStock, newStock: l.newStock,
-          change: l.change, clientName: l.clientName, salesName: l.salesName,
-          userId: l.userId, userName: l.userName, userRole: l.userRole,
-          notes: l.notes === "via scan" ? null : l.notes, createdAt: l.createdAt,
-        };
-      })
-    );
+    // ── recentLogs (last 10 with permit number — batch query) ─────────────
+    const withdrawalRefs = recentLogs
+      .filter((l) => l.referenceType === "withdrawal" && l.referenceId)
+      .map((l) => l.referenceId!);
+    const supplyRefs = recentLogs
+      .filter((l) => l.referenceType === "supply" && l.referenceId)
+      .map((l) => l.referenceId!);
+
+    const [withdrawalPermits, supplyPermits] = await Promise.all([
+      withdrawalRefs.length > 0
+        ? prisma.withdrawalPermit.findMany({
+            where: { id: { in: withdrawalRefs } },
+            select: { id: true, permitNumber: true, permitNumberOrig: true },
+          })
+        : [],
+      supplyRefs.length > 0
+        ? prisma.supplyPermit.findMany({
+            where: { id: { in: supplyRefs } },
+            select: { id: true, permitNumber: true, permitNumberOrig: true },
+          })
+        : [],
+    ]);
+
+    const wMap = new Map<string, { id: string; permitNumber: string; permitNumberOrig: string | null }>();
+    for (const w of withdrawalPermits) wMap.set(w.id, w);
+    const sMap = new Map<string, { id: string; permitNumber: string; permitNumberOrig: string | null }>();
+    for (const s of supplyPermits) sMap.set(s.id, s);
+
+    const recentLogsWithPermit = recentLogs.map((l) => {
+      let permitNumber: string | null = null;
+      if (l.referenceType === "withdrawal" && l.referenceId) {
+        const w = wMap.get(l.referenceId);
+        permitNumber = w?.permitNumberOrig || w?.permitNumber || null;
+      } else if (l.referenceType === "supply" && l.referenceId) {
+        const s = sMap.get(l.referenceId);
+        permitNumber = s?.permitNumberOrig || s?.permitNumber || null;
+      }
+      return {
+        id: l.id, type: l.type, permitNumber, productId: l.productId,
+        productName: l.product.name, oldStock: l.oldStock, newStock: l.newStock,
+        change: l.change, clientName: l.clientName, salesName: l.salesName,
+        userId: l.userId, userName: l.userName, userRole: l.userRole,
+        notes: l.notes === "via scan" ? null : l.notes, createdAt: l.createdAt,
+      };
+    });
 
     res.json({
       kpis: {

@@ -178,6 +178,52 @@ router.patch("/reservations/:id/cancel", requireAuth, requirePermission("reserva
   }
 });
 
+// PATCH /reservations/:id/reactivate — إعادة تنشيط حجز ملغي (Undo)
+router.patch("/reservations/:id/reactivate", requireAuth, requirePermission("reservations.cancel"), async (req: AuthRequest, res, next) => {
+  try {
+    const existing = await prisma.reservation.findUnique({
+      where: { id: req.params.id },
+      include: { product: true },
+    });
+    if (!existing) {
+      res.status(404).json({ error: "Reservation not found" });
+      return;
+    }
+    if (existing.status !== "cancelled") {
+      res.status(400).json({ error: "Only cancelled reservations can be reactivated" });
+      return;
+    }
+    if (existing.quantity > existing.product.stock) {
+      res.status(400).json({ error: "Insufficient stock to reactivate reservation" });
+      return;
+    }
+
+    const reservation = await prisma.$transaction(async (tx) => {
+      const r = await tx.reservation.update({
+        where: { id: req.params.id },
+        data: { status: "active" },
+        include: {
+          product: { select: { id: true, name: true, variant: true, stock: true, reservedStock: true } },
+          client: { select: { id: true, name: true } },
+        },
+      });
+
+      await tx.product.update({
+        where: { id: existing.productId },
+        data: { reservedStock: { increment: existing.quantity } },
+      });
+
+      await incrementReservedStock(tx, existing.warehouseId, existing.productId, existing.quantity);
+
+      return r;
+    });
+
+    res.json({ reservation });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // PATCH /reservations/:id/fulfill — تنفيذ حجز (خصم من المخزون)
 router.patch("/reservations/:id/fulfill", requireAuth, requirePermission("reservations.fulfill"), async (req: AuthRequest, res, next) => {
   try {

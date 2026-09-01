@@ -77,6 +77,8 @@ export const PERMISSIONS = {
   ANOMALIES_RUN: 'anomalies.run',
   ANOMALIES_RESOLVE: 'anomalies.resolve',
   TIMELINE_VIEW: 'timeline.view',
+  SETTINGS_VIEW: 'settings.view',
+  SETTINGS_MANAGE: 'settings.manage',
 } as const;
 
 export type Permission = (typeof PERMISSIONS)[keyof typeof PERMISSIONS];
@@ -157,6 +159,7 @@ export const DEFAULT_ROLES: Record<string, { displayName: string; description: s
       PERMISSIONS.ANOMALIES_VIEW,
       PERMISSIONS.ANOMALIES_RUN,
       PERMISSIONS.TIMELINE_VIEW,
+      PERMISSIONS.SETTINGS_VIEW,
     ],
   },
   viewer: {
@@ -176,6 +179,7 @@ export const DEFAULT_ROLES: Record<string, { displayName: string; description: s
       PERMISSIONS.ALERTS_VIEW,
       PERMISSIONS.ANOMALIES_VIEW,
       PERMISSIONS.TIMELINE_VIEW,
+      PERMISSIONS.SETTINGS_VIEW,
     ],
   },
 };

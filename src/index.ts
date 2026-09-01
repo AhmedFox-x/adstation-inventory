@@ -35,6 +35,7 @@ import priceListsRouter from "./routes/price-lists";
 import alertsCenterRouter from "./routes/alerts-center";
 import anomaliesRouter from "./routes/anomalies";
 import timelineRouter from "./routes/timeline";
+import settingsRouter from "./routes/settings";
 
 import { errorHandler } from "./middleware/errorHandler";
 import { initKeyManager } from "./utils/keyManager";
@@ -176,6 +177,7 @@ app.use("/api/inventory", priceListsRouter);
 app.use("/api/inventory", alertsCenterRouter);
 app.use("/api/inventory", anomaliesRouter);
 app.use("/api/inventory", timelineRouter);
+app.use("/api/inventory", settingsRouter);
 
 // ─── Key Manager Status ──────────────────────────────────────────────────────
 import { getStatus, getKeyCount } from "./utils/keyManager";
