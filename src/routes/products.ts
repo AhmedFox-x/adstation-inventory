@@ -172,7 +172,7 @@ router.get("/stats", requireAuth, async (_req, res, next) => {
 // ── GET /api/inventory/products ───────────────────────────────────────────────
 router.get("/products", requireAuth, async (req, res, next) => {
   try {
-    const { search, category, page = "1", limit = "50", archived } = req.query as Record<string, string>;
+    const { search, category, page = "1", limit = "50", archived, sort, order } = req.query as Record<string, string>;
     const where: any = archived === "true" ? {} : { deletedAt: null };
 
     if (search) {
@@ -189,8 +189,12 @@ router.get("/products", requireAuth, async (req, res, next) => {
     const skip = (Number(page) - 1) * Number(limit);
     const take = Number(limit);
 
+    const sortField = ["name", "stock", "price"].includes(sort || "") ? sort : null;
+    const sortDir: "asc" | "desc" = order === "desc" ? "desc" : "asc";
+    const orderBy: any = sortField ? { [sortField]: sortDir } : { createdAt: "desc" };
+
     const [products, total] = await Promise.all([
-      prisma.product.findMany({ where, orderBy: { createdAt: "desc" }, skip, take }),
+      prisma.product.findMany({ where, orderBy, skip, take }),
       prisma.product.count({ where }),
     ]);
 

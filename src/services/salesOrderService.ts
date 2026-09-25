@@ -1097,10 +1097,12 @@ export async function cancelOrder(client: PrismaClient, id: string, user: Servic
 
 export async function expireSalesOrders(client: PrismaClient): Promise<number> {
   let count = 0;
+  const startOfToday = new Date();
+  startOfToday.setHours(0, 0, 0, 0);
   const expired = await client.salesOrder.findMany({
     where: {
       status: { in: ["draft", "confirmed"] },
-      expiresAt: { lte: new Date() },
+      expiresAt: { lt: startOfToday },
     },
     include: { items: true, client: true },
   });

@@ -34,6 +34,8 @@ const DEFAULT_FEATURES: Record<string, string> = {
   "feature.anomalies": "true",
   "feature.importExport": "true",
   "feature.qrPrint": "true",
+  "feature.avgCost": "true",
+  "feature.minSellingCol": "true",
 };
 
 // GET /api/inventory/settings — all settings
